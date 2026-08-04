@@ -1,6 +1,6 @@
 # USAD-CS Installation
 
-The **Unified Student Advising and Degree-Progression Recommender Tool (USAD-CS)** runs on the UP Diliman CRS Online Advising page through a small Tampermonkey loader.
+The **Unified Student Advising and Degree-Progression Recommender Tool (USAD-CS)** runs on the CRS Online Advising page through a small Tampermonkey loader.
 
 ## Requirements
 
