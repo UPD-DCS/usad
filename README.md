@@ -5,8 +5,7 @@ The **Unified Student Advising and Degree-Progression Recommender Tool (USAD-CS)
 ## Requirements
 
 - A browser with [Tampermonkey](https://www.tampermonkey.net/) installed
-- Access to UP Diliman CRS
-- An internet connection while using USAD-CS
+- Access to UP Diliman CRS Online Advising Module
 
 ## Install the loader
 
