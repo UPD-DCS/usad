@@ -4192,13 +4192,15 @@
                         const checked = availabilityByCourse?.has(rawCourseName);
 
                         // Availability styling:
-                        // at least one CRS result = course code followed by ✅;
-                        // no CRS result = normal black text without an icon.
-                        // Before the check finishes, use neutral gray.
+                        // at least one CRS result = course code followed by 🟢;
+                        // no CRS result = course code followed by 🔴.
+                        // Before the check finishes, use neutral gray without an icon.
                         const color = checked ? '#000000' : '#666';
                         const availabilityIcon =
-                            checked && offered
-                                ? ' <span aria-label="Available in CRS" title="Available in CRS">✅</span>'
+                            checked
+                                ? offered
+                                    ? ' <span aria-label="Offered in CRS" title="Offered in CRS">🟢</span>'
+                                    : ' <span aria-label="Not offered in CRS" title="Not offered in CRS">🔴</span>'
                                 : '';
                         const safeCourse = escapeHTML(courseName);
                         const concurrentText =
@@ -4213,7 +4215,7 @@
                 });
 
                 if (lookupFailed) {
-                    html += `<div style="margin-top:4px; color:#856404; font-size:10px;">CRS schedule lookup failed; red entries may not reflect actual offerings.</div>`;
+                    html += `<div style="margin-top:4px; color:#856404; font-size:10px;">Some CRS schedule lookups failed; those courses remain gray without an availability icon.</div>`;
                 }
 
                 if (listDiv) {
@@ -4239,8 +4241,12 @@
                     }
                 }),
             ).then((results) => {
+                // Only successful lookups establish availability. A network
+                // failure must remain unknown instead of showing a false ❌.
                 const availabilityByCourse = new Map(
-                    results.map(([course, offered]) => [course, offered]),
+                    results
+                        .filter(([, , error]) => !error)
+                        .map(([course, offered]) => [course, offered]),
                 );
                 const lookupFailed = results.some(([, , error]) => Boolean(error));
                 renderRecommendations(availabilityByCourse, lookupFailed);
@@ -4249,7 +4255,7 @@
                 msgDiv.style.color = lookupFailed ? '#856404' : '#666';
                 msgDiv.innerText = lookupFailed
                     ? 'Recommendations checked; some CRS lookups failed.'
-                    : 'Courses with checkmark are offered this semester.';
+                    : 'Green circles are offered this semester; red circles are not offered.';
             });
         } catch (err) {
             console.error('Prereq Engine Crash:', err);
