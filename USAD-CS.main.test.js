@@ -188,9 +188,10 @@ assert.equal(loaderContext.__USAD_CS_LOADER_TEST__, true);
 
 assert.ok(
     source.includes(
-        'background:#d1e7dd; border-left:4px solid #198754;',
+        "? 'padding:1px 0; background:#d1e7dd; border-radius:2px;'",
     ),
 );
+assert.ok(!source.includes('border-left:4px solid #198754;'));
 assert.ok(
     source.includes(
         'white-space:nowrap; border:0;">Currently enlisted: </span>',
@@ -201,7 +202,7 @@ assert.ok(!source.includes('style="font-size:9px;">✅</span>'));
 assert.ok(!source.includes('(enlisted)</span>'));
 assert.ok(
     source.includes(
-        'Below is indicative sequence for the current enlistment and all remaining courses in the curriculum. Green-highlighted entries are currently enlisted.',
+        'Below is indicative sequence for the current enlistment and all remaining courses in the curriculum. Pale-green entries are currently enlisted.',
     ),
 );
 

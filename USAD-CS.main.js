@@ -4257,7 +4257,7 @@
                         const displayCourse =
                             formatProgressionCourseDisplayName(course);
                         const enlistedRowStyle = course.isCurrentlyEnlisted
-                            ? 'padding:1px 3px; background:#d1e7dd; border-left:4px solid #198754; border-radius:2px;'
+                            ? 'padding:1px 0; background:#d1e7dd; border-radius:2px;'
                             : 'padding:1px 0;';
                         html += `<li${course.isCurrentlyEnlisted ? ' title="Currently enlisted"' : ''} style="margin:0; ${enlistedRowStyle} font-size:10px; line-height:1.25;">
                             <div style="display:flex; justify-content:space-between; align-items:baseline; gap:4px;">
@@ -4290,7 +4290,7 @@
                 progressionStatusDiv.style.color =
                     progression.unplaced.length > 0 ? '#856404' : '#666';
                 progressionStatusDiv.innerText =
-                    'Below is indicative sequence for the current enlistment and all remaining courses in the curriculum. Green-highlighted entries are currently enlisted.';
+                    'Below is indicative sequence for the current enlistment and all remaining courses in the curriculum. Pale-green entries are currently enlisted.';
             };
 
             renderPrescribedProgression();
