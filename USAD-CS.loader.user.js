@@ -17,7 +17,7 @@
     'use strict';
 
     const EXTERNAL_SCRIPT_URL =
-        'https://raw.githubusercontent.com/jjsvillar/usad/main/USAD-CS.main.js';
+        'https://raw.githubusercontent.com/UPD-DCS/usad/main/USAD-CS.main.js';
     const REQUEST_TIMEOUT_MS = 30_000;
 
     function createFreshScriptUrl(scriptUrl) {
