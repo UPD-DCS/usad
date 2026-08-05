@@ -178,7 +178,7 @@ assert.equal(loaderRequest.method, 'GET');
 assert.equal(loaderRequest.timeout, 30_000);
 assert.match(
     loaderRequest.url,
-    /^https:\/\/raw\.githubusercontent\.com\/jjsvillar\/usad\/main\/USAD-CS\.main\.js\?usad_cs_time=\d+$/,
+    /^https:\/\/raw\.githubusercontent\.com\/UPD-DCS\/usad\/main\/USAD-CS\.main\.js\?usad_cs_time=\d+$/,
 );
 loaderRequest.onload({
     status: 200,
