@@ -4258,7 +4258,7 @@
                             formatProgressionCourseDisplayName(course);
                         html += `<li style="margin:0; padding:1px 0; font-size:10px; line-height:1.25;">
                             <div style="display:flex; justify-content:space-between; align-items:baseline; gap:4px;">
-                                <b style="min-width:0; overflow-wrap:anywhere;">${escapeHTML(displayCourse)}${course.isCurrentlyEnlisted ? ' <span style="font-size:8px; color:#0f5132;">(enlisted)</span>' : ''}</b>
+                                <b style="min-width:0; overflow-wrap:anywhere;">${escapeHTML(displayCourse)}${course.isCurrentlyEnlisted ? ' <span aria-label="Currently enlisted" title="Currently enlisted" style="font-size:9px;">✅</span>' : ''}</b>
                                 <span style="flex:0 0 24px; text-align:center; white-space:nowrap; color:#666; font-size:9px;">${unitLabel}</span>
                             </div>
                         </li>`;
@@ -4287,9 +4287,7 @@
                 progressionStatusDiv.style.color =
                     progression.unplaced.length > 0 ? '#856404' : '#666';
                 progressionStatusDiv.innerText =
-                    progression.unplaced.length > 0
-                        ? 'Current enlistments count toward the first-term load; the sequence includes every automatically placeable checklist course.'
-                        : 'Current enlistments count toward the first-term load; additional courses are placed only when capacity remains.';
+                    'Below is indicative sequence for the current enlistment and all remaining courses in the curriculum.';
             };
 
             renderPrescribedProgression();
