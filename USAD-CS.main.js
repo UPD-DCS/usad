@@ -4290,7 +4290,7 @@
                 progressionStatusDiv.style.color =
                     progression.unplaced.length > 0 ? '#856404' : '#666';
                 progressionStatusDiv.innerText =
-                    'Below is indicative sequence for the current enlistment and all remaining courses in the curriculum. Pale-green entries are currently enlisted.';
+                    'Below is indicative sequence for the current enlistment and all remaining courses in the curriculum. Courses highlighed in green are currently enlisted.';
             };
 
             renderPrescribedProgression();
