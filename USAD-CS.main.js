@@ -647,6 +647,38 @@
         return courses.some((course) => course.hasLab) ? 21 : 18;
     }
 
+    // Combines the authoritative CRS enlisted-unit total with proposed
+    // additions. Enlisted course metadata remains part of the course set so
+    // lab-aware caps and exclusive Midyear CS 195 loads are evaluated against
+    // the student's actual current load, not only the new recommendations.
+    function getProgressionLoadSummary(
+        termCode,
+        currentEnlistedUnits,
+        enlistedCourses,
+        additionalCourses,
+    ) {
+        const normalizedCurrentUnits = Number(currentEnlistedUnits);
+        const currentUnits =
+            Number.isFinite(normalizedCurrentUnits) && normalizedCurrentUnits > 0
+                ? normalizedCurrentUnits
+                : 0;
+        const currentCourses = Array.isArray(enlistedCourses) ? enlistedCourses : [];
+        const additions = Array.isArray(additionalCourses) ? additionalCourses : [];
+        const additionalUnits = additions.reduce((sum, course) => {
+            const units = Number(course?.units);
+            return sum + (Number.isFinite(units) && units > 0 ? units : 0);
+        }, 0);
+        const combinedCourses = [...currentCourses, ...additions];
+
+        return {
+            currentUnits,
+            additionalUnits,
+            totalUnits: currentUnits + additionalUnits,
+            maximumUnits: getProgressionMaximumUnits(termCode, combinedCourses),
+            combinedCourses,
+        };
+    }
+
     function isCs195Course(course) {
         return course?.normCode === 'CS195';
     }
@@ -807,6 +839,7 @@
             getPairedGeFamily,
             getNstpLevel,
             getProgressionMaximumUnits,
+            getProgressionLoadSummary,
             isValidProgressionCourseSet,
             getNextTermCode,
             buildProgressionTermHeading,
@@ -3191,6 +3224,15 @@
                 .filter((item) => item.category === COURSE_CATEGORIES.REQUIRED_GE)
                 .sort((a, b) => naturalCourseSort(a.course, b.course));
 
+            const enlistedProgressionCourses = enlistedCourses.map((course) => {
+                const rule = ruleByCode.get(course.normalizedCode);
+                const scheduleText = course.row.cells?.[2]?.textContent || '';
+                return {
+                    normCode: course.normalizedCode,
+                    hasLab: Boolean(rule?.hasLab || /\blab\b/i.test(scheduleText)),
+                };
+            });
+
             const buildProgressionLoad = () => {
                 const selected = [];
                 const selectedCodes = new Set();
@@ -3765,7 +3807,10 @@
                 ) {
                     const semesterSelected = [];
                     const semesterIds = new Set();
-                    let totalUnits = 0;
+                    const isCurrentEnlistmentTerm = termAttempt === 0;
+                    let semesterAcademicUnits = isCurrentEnlistmentTerm
+                        ? totalUnits
+                        : 0;
 
                     const isAllowedThisTerm = (candidate) =>
                         candidate.semesterOffered.includes(termCode);
@@ -3829,36 +3874,53 @@
                         const bundle = collectBundle(candidate);
                         if (!bundle) return false;
 
-                        const bundleUnits = bundle.reduce(
-                            (sum, item) => sum + item.units,
-                            0,
-                        );
-                        const selectedPECount = semesterSelected.filter(
-                            (item) => item.category === COURSE_CATEGORIES.PE,
-                        ).length;
+                        const selectedPECount = isCurrentEnlistmentTerm
+                            ? enlistedCourses.filter((course) =>
+                                  /^PE\b/i.test(course.baseCode),
+                              ).length +
+                              semesterSelected.filter(
+                                  (item) =>
+                                      !item.isCurrentlyEnlisted &&
+                                      item.category === COURSE_CATEGORIES.PE,
+                              ).length
+                            : semesterSelected.filter(
+                                  (item) => item.category === COURSE_CATEGORIES.PE,
+                              ).length;
                         const bundlePECount = bundle.filter(
                             (item) => item.category === COURSE_CATEGORIES.PE,
                         ).length;
                         const maximumPECount = 1;
                         if (selectedPECount + bundlePECount > maximumPECount)
                             return false;
-                        const maximumUnits = getProgressionMaximumUnits(
+                        const loadSummary = getProgressionLoadSummary(
                             termCode,
-                            [...semesterSelected, ...bundle],
+                            isCurrentEnlistmentTerm ? totalUnits : 0,
+                            isCurrentEnlistmentTerm
+                                ? enlistedProgressionCourses
+                                : [],
+                            isCurrentEnlistmentTerm
+                                ? [
+                                      ...semesterSelected.filter(
+                                          (item) => !item.isCurrentlyEnlisted,
+                                      ),
+                                      ...bundle,
+                                  ]
+                                : [...semesterSelected, ...bundle],
                         );
                         if (
                             !isValidProgressionCourseSet(
                                 termCode,
-                                [...semesterSelected, ...bundle],
+                                loadSummary.combinedCourses,
                             )
                         )
                             return false;
-                        if (totalUnits + bundleUnits > maximumUnits) return false;
+                        if (loadSummary.totalUnits > loadSummary.maximumUnits)
+                            return false;
 
                         bundle.forEach((item) => {
                             semesterSelected.push(item);
                             semesterIds.add(item.id);
-                            totalUnits += item.units;
+                            semesterAcademicUnits += item.units;
                         });
                         return true;
                     };
@@ -3917,15 +3979,24 @@
                             ? eligible.find(isCs195Course)
                             : null;
 
+                    // Current enlistments are fixed in the first term and are
+                    // already included in CRS's authoritative total-units
+                    // value. Add the matching checklist entries for display
+                    // and progression credit without counting their units a
+                    // second time.
+                    currentlyEnlisted.forEach((item) => {
+                        if (semesterIds.has(item.id)) return;
+                        semesterSelected.push(item);
+                        semesterIds.add(item.id);
+                    });
+
                     if (midyearCs195Candidate) {
                         addCandidate(midyearCs195Candidate);
                     } else {
-                        // Eligible current enlistments remain fixed into the
-                        // starting load. Fill the remaining space with core
-                        // courses first, then GEs/electives, PE, and NSTP.
-                        // Column 4 remains a strict term filter for every
-                        // group.
-                        currentlyEnlisted.forEach(addCandidate);
+                        // Fill only the capacity left after current enlistments,
+                        // prioritizing core courses, then GEs/electives, PE,
+                        // and NSTP. Column 4 remains a strict term filter for
+                        // every group.
                         coreCourses.forEach(addCandidate);
                         geAndElectiveCourses.forEach(addCandidate);
                         otherCourses.forEach(addCandidate);
@@ -3933,11 +4004,22 @@
                         nstpCourses.forEach(addCandidate);
                     }
 
-                    if (semesterSelected.length > 0) {
+                    if (
+                        semesterSelected.length > 0 ||
+                        (isCurrentEnlistmentTerm && totalUnits > 0)
+                    ) {
                         emptyTermCount = 0;
-                        const maximumUnits = getProgressionMaximumUnits(
+                        const loadSummary = getProgressionLoadSummary(
                             termCode,
-                            semesterSelected,
+                            isCurrentEnlistmentTerm ? totalUnits : 0,
+                            isCurrentEnlistmentTerm
+                                ? enlistedProgressionCourses
+                                : [],
+                            isCurrentEnlistmentTerm
+                                ? semesterSelected.filter(
+                                      (item) => !item.isCurrentlyEnlisted,
+                                  )
+                                : semesterSelected,
                         );
                         semesterSelected.forEach((item) => plannedIds.add(item.id));
                         semesterSelected.forEach((item) =>
@@ -3960,8 +4042,8 @@
                                 advisingTermHeading,
                             ),
                             courses: semesterSelected,
-                            totalUnits,
-                            maximumUnits,
+                            totalUnits: semesterAcademicUnits,
+                            maximumUnits: loadSummary.maximumUnits,
                         });
                     } else {
                         emptyTermCount++;
@@ -4064,7 +4146,7 @@
                             formatProgressionCourseDisplayName(course);
                         html += `<li style="margin:0; padding:1px 0; font-size:10px; line-height:1.25;">
                             <div style="display:flex; justify-content:space-between; align-items:baseline; gap:4px;">
-                                <b style="min-width:0; overflow-wrap:anywhere;">${escapeHTML(displayCourse)}</b>
+                                <b style="min-width:0; overflow-wrap:anywhere;">${escapeHTML(displayCourse)}${course.isCurrentlyEnlisted ? ' <span style="font-size:8px; color:#0f5132;">(enlisted)</span>' : ''}</b>
                                 <span style="flex:0 0 24px; text-align:center; white-space:nowrap; color:#666; font-size:9px;">${unitLabel}</span>
                             </div>
                         </li>`;
@@ -4094,8 +4176,8 @@
                     progression.unplaced.length > 0 ? '#856404' : '#666';
                 progressionStatusDiv.innerText =
                     progression.unplaced.length > 0
-                        ? 'The prescribed sequence includes every automatically placeable checklist course.'
-                        : 'Below is indicative sequence for all remaining courses in the curriculum.';
+                        ? 'Current enlistments count toward the first-term load; the sequence includes every automatically placeable checklist course.'
+                        : 'Current enlistments count toward the first-term load; additional courses are placed only when capacity remains.';
             };
 
             renderPrescribedProgression();
