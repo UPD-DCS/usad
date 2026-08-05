@@ -186,4 +186,17 @@ loaderRequest.onload({
 });
 assert.equal(loaderContext.__USAD_CS_LOADER_TEST__, true);
 
+assert.ok(
+    source.includes(
+        'aria-label="Currently enlisted" title="Currently enlisted"',
+    ),
+);
+assert.ok(source.includes('>✅</span>'));
+assert.ok(!source.includes('(enlisted)</span>'));
+assert.ok(
+    source.includes(
+        'Below is indicative sequence for the current enlistment and all remaining courses in the curriculum.',
+    ),
+);
+
 console.log('USAD-CS regression tests passed.');
