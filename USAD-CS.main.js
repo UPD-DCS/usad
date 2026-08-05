@@ -4256,9 +4256,12 @@
                                   : course.units.toFixed(1);
                         const displayCourse =
                             formatProgressionCourseDisplayName(course);
-                        html += `<li style="margin:0; padding:1px 0; font-size:10px; line-height:1.25;">
+                        const enlistedRowStyle = course.isCurrentlyEnlisted
+                            ? 'padding:1px 3px; background:#d1e7dd; border-left:4px solid #198754; border-radius:2px;'
+                            : 'padding:1px 0;';
+                        html += `<li${course.isCurrentlyEnlisted ? ' title="Currently enlisted"' : ''} style="margin:0; ${enlistedRowStyle} font-size:10px; line-height:1.25;">
                             <div style="display:flex; justify-content:space-between; align-items:baseline; gap:4px;">
-                                <b style="min-width:0; overflow-wrap:anywhere;">${escapeHTML(displayCourse)}${course.isCurrentlyEnlisted ? ' <span aria-label="Currently enlisted" title="Currently enlisted" style="font-size:9px; color:#0f5132; font-weight:700;">(E)</span>' : ''}</b>
+                                <b style="min-width:0; overflow-wrap:anywhere;">${course.isCurrentlyEnlisted ? '<span style="position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0;">Currently enlisted: </span>' : ''}${escapeHTML(displayCourse)}</b>
                                 <span style="flex:0 0 24px; text-align:center; white-space:nowrap; color:#666; font-size:9px;">${unitLabel}</span>
                             </div>
                         </li>`;
@@ -4287,7 +4290,7 @@
                 progressionStatusDiv.style.color =
                     progression.unplaced.length > 0 ? '#856404' : '#666';
                 progressionStatusDiv.innerText =
-                    'Below is indicative sequence for the current enlistment and all remaining courses in the curriculum. "(E)" means currently enlisted.';
+                    'Below is indicative sequence for the current enlistment and all remaining courses in the curriculum. Green-highlighted entries are currently enlisted.';
             };
 
             renderPrescribedProgression();

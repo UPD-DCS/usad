@@ -188,19 +188,20 @@ assert.equal(loaderContext.__USAD_CS_LOADER_TEST__, true);
 
 assert.ok(
     source.includes(
-        'aria-label="Currently enlisted" title="Currently enlisted"',
+        'background:#d1e7dd; border-left:4px solid #198754;',
     ),
 );
 assert.ok(
     source.includes(
-        'style="font-size:9px; color:#0f5132; font-weight:700;">(E)</span>',
+        'white-space:nowrap; border:0;">Currently enlisted: </span>',
     ),
 );
+assert.ok(!source.includes('>(E)</span>'));
 assert.ok(!source.includes('style="font-size:9px;">✅</span>'));
 assert.ok(!source.includes('(enlisted)</span>'));
 assert.ok(
     source.includes(
-        'Below is indicative sequence for the current enlistment and all remaining courses in the curriculum.',
+        'Below is indicative sequence for the current enlistment and all remaining courses in the curriculum. Green-highlighted entries are currently enlisted.',
     ),
 );
 
