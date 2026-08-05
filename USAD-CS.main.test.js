@@ -191,7 +191,12 @@ assert.ok(
         'aria-label="Currently enlisted" title="Currently enlisted"',
     ),
 );
-assert.ok(source.includes('>✅</span>'));
+assert.ok(
+    source.includes(
+        'style="font-size:9px; color:#0f5132; font-weight:700;">(E)</span>',
+    ),
+);
+assert.ok(!source.includes('style="font-size:9px;">✅</span>'));
 assert.ok(!source.includes('(enlisted)</span>'));
 assert.ok(
     source.includes(

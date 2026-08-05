@@ -4258,7 +4258,7 @@
                             formatProgressionCourseDisplayName(course);
                         html += `<li style="margin:0; padding:1px 0; font-size:10px; line-height:1.25;">
                             <div style="display:flex; justify-content:space-between; align-items:baseline; gap:4px;">
-                                <b style="min-width:0; overflow-wrap:anywhere;">${escapeHTML(displayCourse)}${course.isCurrentlyEnlisted ? ' <span aria-label="Currently enlisted" title="Currently enlisted" style="font-size:9px;">✅</span>' : ''}</b>
+                                <b style="min-width:0; overflow-wrap:anywhere;">${escapeHTML(displayCourse)}${course.isCurrentlyEnlisted ? ' <span aria-label="Currently enlisted" title="Currently enlisted" style="font-size:9px; color:#0f5132; font-weight:700;">(E)</span>' : ''}</b>
                                 <span style="flex:0 0 24px; text-align:center; white-space:nowrap; color:#666; font-size:9px;">${unitLabel}</span>
                             </div>
                         </li>`;
