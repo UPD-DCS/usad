@@ -30,6 +30,7 @@ const {
     getProgressionMaximumUnits,
     getProgressionLoadSummary,
     buildEnlistedProgressionCandidate,
+    sortProgressionCourses,
     isValidProgressionCourseSet,
     getNextTermCode,
     buildProgressionTermHeading,
@@ -143,6 +144,40 @@ assert.equal(enlistedPeCandidate.units, 0);
 assert.equal(enlistedPeCandidate.displayUnits, 2);
 assert.equal(enlistedPeCandidate.category, 'PE');
 
+assert.deepEqual(
+    Array.from(
+        sortProgressionCourses([
+            {
+                course: 'CS 140',
+                category: 'Core Courses',
+                isCurrentlyEnlisted: false,
+            },
+            {
+                course: 'PE 2 PG',
+                category: 'PE',
+                isCurrentlyEnlisted: true,
+            },
+            {
+                course: 'CS 138',
+                category: 'Core Courses',
+                isCurrentlyEnlisted: false,
+            },
+            {
+                course: 'Theatre 12',
+                category: 'Free Electives',
+                isCurrentlyEnlisted: true,
+            },
+            {
+                course: 'CS 175',
+                category: 'Core Courses',
+                isCurrentlyEnlisted: true,
+            },
+        ]),
+        (course) => course.course,
+    ),
+    ['CS 175', 'Theatre 12', 'PE 2 PG', 'CS 138', 'CS 140'],
+);
+
 assert.equal(
     isValidProgressionCourseSet('M', [{ normCode: 'CS195' }]),
     true,
@@ -202,7 +237,7 @@ assert.ok(!source.includes('style="font-size:9px;">✅</span>'));
 assert.ok(!source.includes('(enlisted)</span>'));
 assert.ok(
     source.includes(
-        'Below is indicative sequence for the current enlistment and all remaining courses in the curriculum. Pale-green entries are currently enlisted.',
+        'Below is indicative sequence for the current enlistment and all remaining courses in the curriculum. Courses highlighed in green are currently enlisted.',
     ),
 );
 

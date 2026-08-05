@@ -857,6 +857,32 @@
         return aStr.localeCompare(bStr, undefined, { numeric: true, sensitivity: 'base' });
     }
 
+    function getProgressionDisplayGroup(course) {
+        if (course.category === COURSE_CATEGORIES.CORE) return 0;
+        if (POST_CORE_ACADEMIC_CATEGORIES.has(course.category)) return 1;
+        if (course.category === COURSE_CATEGORIES.PE) return 2;
+        if (course.category === COURSE_CATEGORIES.NSTP) return 3;
+        return 1;
+    }
+
+    // Keeps current enlistments together at the top of the active term, then
+    // applies the established category and natural course-code ordering within
+    // the enlisted and recommended sections independently.
+    function sortProgressionCourses(courses) {
+        return [...courses].sort((a, b) => {
+            const enlistmentDifference =
+                Number(Boolean(b.isCurrentlyEnlisted)) -
+                Number(Boolean(a.isCurrentlyEnlisted));
+            if (enlistmentDifference !== 0) return enlistmentDifference;
+
+            const groupDifference =
+                getProgressionDisplayGroup(a) - getProgressionDisplayGroup(b);
+            if (groupDifference !== 0) return groupDifference;
+
+            return naturalCourseSort(a.course, b.course);
+        });
+    }
+
     // Sorts GE entries primarily by their GE curriculum-slot number and secondarily by course name.
     function sortGECourses(a, b) {
         // Extracts the numeric GE-slot index used to order required GE entries.
@@ -896,6 +922,7 @@
             getProgressionMaximumUnits,
             getProgressionLoadSummary,
             buildEnlistedProgressionCandidate,
+            sortProgressionCourses,
             isValidProgressionCourseSet,
             getNextTermCode,
             buildProgressionTermHeading,
@@ -4189,26 +4216,6 @@
                 const progression = buildPrescribedProgression();
                 let html = '';
 
-                const getProgressionDisplayGroup = (course) => {
-                    if (course.category === COURSE_CATEGORIES.CORE) return 0;
-                    if (POST_CORE_ACADEMIC_CATEGORIES.has(course.category))
-                        return 1;
-                    if (course.category === COURSE_CATEGORIES.PE) return 2;
-                    if (course.category === COURSE_CATEGORIES.NSTP) return 3;
-                    return 1;
-                };
-                const sortProgressionCourses = (courses) =>
-                    [...courses].sort((a, b) => {
-                        const groupDifference =
-                            getProgressionDisplayGroup(a) -
-                            getProgressionDisplayGroup(b);
-                        if (groupDifference !== 0) return groupDifference;
-
-                        // Core/elective courses use natural course-code order
-                        // (CS 138 before CS 140); GEs and the remaining groups
-                        // use the same comparator for alphabetical stability.
-                        return naturalCourseSort(a.course, b.course);
-                    });
                 const formatProgressionCourseDisplayName = (course) => {
                     const displayName = formatCourseDisplayName(course.course);
                     if (
