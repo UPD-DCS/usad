@@ -188,7 +188,7 @@ assert.equal(loaderContext.__USAD_CS_LOADER_TEST__, true);
 
 assert.ok(
     source.includes(
-        "? 'padding:1px 0; background:#d1e7dd; border-radius:2px;'",
+        "? 'padding:1px 0; background:#d1e7dd; box-shadow:-17px 0 0 #d1e7dd; border-radius:2px;'",
     ),
 );
 assert.ok(!source.includes('border-left:4px solid #198754;'));

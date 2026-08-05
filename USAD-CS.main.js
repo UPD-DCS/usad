@@ -4257,7 +4257,7 @@
                         const displayCourse =
                             formatProgressionCourseDisplayName(course);
                         const enlistedRowStyle = course.isCurrentlyEnlisted
-                            ? 'padding:1px 0; background:#d1e7dd; border-radius:2px;'
+                            ? 'padding:1px 0; background:#d1e7dd; box-shadow:-17px 0 0 #d1e7dd; border-radius:2px;'
                             : 'padding:1px 0;';
                         html += `<li${course.isCurrentlyEnlisted ? ' title="Currently enlisted"' : ''} style="margin:0; ${enlistedRowStyle} font-size:10px; line-height:1.25;">
                             <div style="display:flex; justify-content:space-between; align-items:baseline; gap:4px;">
