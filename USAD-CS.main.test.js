@@ -29,6 +29,7 @@ const {
     getNstpLevel,
     getProgressionMaximumUnits,
     getProgressionLoadSummary,
+    buildEnlistedProgressionCandidate,
     isValidProgressionCourseSet,
     getNextTermCode,
     buildProgressionTermHeading,
@@ -116,6 +117,31 @@ const fullLoadSummary = getProgressionLoadSummary(
 assert.equal(fullLoadSummary.additionalUnits, 0);
 assert.equal(fullLoadSummary.totalUnits, 21);
 assert.equal(fullLoadSummary.maximumUnits, 21);
+
+const enlistedLabCandidate = buildEnlistedProgressionCandidate(
+    {
+        normalizedCode: 'CS198',
+        baseCode: 'CS 198',
+        creditText: '3.0',
+        scheduleText: 'M 2-9PM lab TBA',
+    },
+    null,
+);
+assert.equal(enlistedLabCandidate.course, 'CS 198');
+assert.equal(enlistedLabCandidate.units, 3);
+assert.equal(enlistedLabCandidate.hasLab, true);
+assert.equal(enlistedLabCandidate.isCurrentlyEnlisted, true);
+assert.equal(enlistedLabCandidate.category, 'Free Electives');
+
+const enlistedPeCandidate = buildEnlistedProgressionCandidate({
+    normalizedCode: 'PE2SCD',
+    baseCode: 'PE 2 SCD',
+    creditText: '(2.0)',
+    scheduleText: 'S 2-4PM',
+});
+assert.equal(enlistedPeCandidate.units, 0);
+assert.equal(enlistedPeCandidate.displayUnits, 2);
+assert.equal(enlistedPeCandidate.category, 'PE');
 
 assert.equal(
     isValidProgressionCourseSet('M', [{ normCode: 'CS195' }]),

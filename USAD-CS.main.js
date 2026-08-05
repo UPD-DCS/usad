@@ -679,6 +679,61 @@
         };
     }
 
+    // Converts a prerequisite-valid CRS enlistment into the same shape used
+    // by the prescribed progression. This allows valid current courses to be
+    // fixed into the first term even when they do not match an unfinished
+    // checklist row or the external sheet's semester placement.
+    function buildEnlistedProgressionCandidate(enlistedCourse, rule = null) {
+        const normCode = enlistedCourse?.normalizedCode || '';
+        const course = formatCourseDisplayName(
+            cleanExtractedCourseTitle(
+                enlistedCourse?.baseCode || enlistedCourse?.firstLine || '',
+            ),
+        );
+        let category = getCourseCategory(course);
+        if (/^PE\b/i.test(course)) category = COURSE_CATEGORIES.PE;
+        if (category === COURSE_CATEGORIES.CORE && !rule) {
+            category = COURSE_CATEGORIES.FREE_ELECTIVE;
+        }
+
+        const parsedCredits = Number.parseFloat(
+            String(enlistedCourse?.creditText || '').replace(/[^0-9.\-]/g, ''),
+        );
+        const units = NON_ACADEMIC_CATEGORIES.has(category)
+            ? 0
+            : Number.isFinite(parsedCredits) && parsedCredits > 0
+              ? parsedCredits
+              : 3;
+
+        return {
+            id: `__enlisted__${normCode}`,
+            normCode,
+            course,
+            units,
+            displayUnits:
+                category === COURSE_CATEGORIES.NSTP
+                    ? 3
+                    : category === COURSE_CATEGORIES.PE
+                      ? 2
+                      : units,
+            category,
+            nstpLevel:
+                category === COURSE_CATEGORIES.NSTP
+                    ? getNstpLevel(normCode, course)
+                    : null,
+            prerequisites: rule?.prerequisites || [],
+            corequisites: rule?.corequisites || [],
+            semesterOffered: rule?.semesterOffered?.length
+                ? rule.semesterOffered
+                : ['1', '2', 'M'],
+            hasLab: Boolean(
+                rule?.hasLab || /\blab\b/i.test(enlistedCourse?.scheduleText || ''),
+            ),
+            isCurrentlyEnlisted: true,
+            isPlaceholder: false,
+        };
+    }
+
     function isCs195Course(course) {
         return course?.normCode === 'CS195';
     }
@@ -840,6 +895,7 @@
             getNstpLevel,
             getProgressionMaximumUnits,
             getProgressionLoadSummary,
+            buildEnlistedProgressionCandidate,
             isValidProgressionCourseSet,
             getNextTermCode,
             buildProgressionTermHeading,
@@ -2781,6 +2837,15 @@
                     const firstLine = lines[0] || '';
                     const secondLine = lines[1] || '';
                     const baseCode = parseCourseCodeFromClassDescription(fullText);
+                    const hasCrsPrerequisiteSatisfied = Array.from(
+                        descriptionCell.querySelectorAll('img'),
+                    ).some((image) =>
+                        /prereq(?:uisite)?[\s_-]*satisfied/i.test(
+                            [image.alt, image.title, image.getAttribute('src')]
+                                .filter(Boolean)
+                                .join(' '),
+                        ),
+                    );
 
                     return {
                         row,
@@ -2793,6 +2858,9 @@
                             : firstLine,
                         baseCode,
                         normalizedCode: normalizeCode(baseCode),
+                        scheduleText: row.cells?.[2]?.textContent || '',
+                        creditText: row.cells?.[3]?.textContent || '',
+                        hasCrsPrerequisiteSatisfied,
                     };
                 })
                 .filter(Boolean);
@@ -2904,6 +2972,7 @@
                     courseWithSecondLine,
                     baseCode,
                     normalizedCode: normBase,
+                    hasCrsPrerequisiteSatisfied,
                 } = enlistedCourse;
 
                 const isPE = /^PE\b/i.test(baseCode);
@@ -3008,6 +3077,11 @@
                     }
                 } else {
                     if (eligibleCodesSet.has(normBase)) {
+                        isEligible = true;
+                    } else if (hasCrsPrerequisiteSatisfied) {
+                        // CRS evaluated the actual enlisted class and exposes
+                        // an explicit satisfied marker. Trust that result when
+                        // the external rules sheet has no matching course row.
                         isEligible = true;
                     } else if (!crsCoursesWithPrerequisites.has(normBase)) {
                         // CRS does not show a prerequisite entry for this
@@ -3226,10 +3300,11 @@
 
             const enlistedProgressionCourses = enlistedCourses.map((course) => {
                 const rule = ruleByCode.get(course.normalizedCode);
-                const scheduleText = course.row.cells?.[2]?.textContent || '';
                 return {
                     normCode: course.normalizedCode,
-                    hasLab: Boolean(rule?.hasLab || /\blab\b/i.test(scheduleText)),
+                    hasLab: Boolean(
+                        rule?.hasLab || /\blab\b/i.test(course.scheduleText),
+                    ),
                 };
             });
 
@@ -3749,6 +3824,40 @@
                     });
                 }
 
+                // Checklist matching remains useful for assigning an enlisted
+                // course to its curriculum slot, but it must not decide
+                // whether a prerequisite-valid current enlistment appears in
+                // the first term. Reuse an exact candidate when possible and
+                // add a display-only progression candidate otherwise.
+                const enlistedCourseByCode = new Map(
+                    enlistedCourses.map((course) => [course.normalizedCode, course]),
+                );
+                const currentEnlistedCandidateByCode = new Map();
+                eligibleEnlistedCourseByCode.forEach((courseName, normCode) => {
+                    const enlistedCourse = enlistedCourseByCode.get(normCode);
+                    if (!enlistedCourse) return;
+
+                    let candidate = remainingCandidates.find(
+                        (item) => item.normCode === normCode,
+                    );
+                    if (candidate) {
+                        candidate.isCurrentlyEnlisted = true;
+                        candidate.course = formatCourseDisplayName(
+                            cleanExtractedCourseTitle(
+                                courseName || enlistedCourse.baseCode,
+                                candidate.category,
+                            ),
+                        );
+                    } else {
+                        candidate = buildEnlistedProgressionCandidate(
+                            enlistedCourse,
+                            ruleByCode.get(normCode),
+                        );
+                        remainingCandidates.push(candidate);
+                    }
+                    currentEnlistedCandidateByCode.set(normCode, candidate);
+                });
+
                 const plannedIds = new Set();
                 const projectedPassedCodes = new Set();
                 let projectedAcademicUnits = passedAcademicUnits;
@@ -3925,16 +4034,19 @@
                         return true;
                     };
 
+                    const currentlyEnlisted =
+                        termAttempt === 0
+                            ? Array.from(
+                                  currentEnlistedCandidateByCode.values(),
+                              ).filter(
+                                  (candidate) => !plannedIds.has(candidate.id),
+                              )
+                            : [];
                     const eligible = remainingCandidates.filter(
                         (candidate) =>
                             !plannedIds.has(candidate.id) &&
                             isAllowedThisTerm(candidate) &&
                             prerequisitesMet(candidate),
-                    );
-                    const currentlyEnlisted = eligible.filter(
-                        (candidate) =>
-                            termAttempt === 0 &&
-                            candidate.isCurrentlyEnlisted,
                     );
                     const coreCourses = eligible
                         .filter(
