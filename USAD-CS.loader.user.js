@@ -8,6 +8,8 @@
 // @grant        GM_xmlhttpRequest
 // @connect      crs.upd.edu.ph
 // @connect      gec.upd.edu.ph
+// @connect      docs.google.com
+// @connect      googleusercontent.com
 // @connect      cdnjs.cloudflare.com
 // @connect      raw.githubusercontent.com
 // @require      https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js
