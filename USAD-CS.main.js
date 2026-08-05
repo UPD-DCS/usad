@@ -4287,7 +4287,7 @@
                 progressionStatusDiv.style.color =
                     progression.unplaced.length > 0 ? '#856404' : '#666';
                 progressionStatusDiv.innerText =
-                    'Below is indicative sequence for the current enlistment and all remaining courses in the curriculum.';
+                    'Below is indicative sequence for the current enlistment and all remaining courses in the curriculum. "(E)" means currently enlisted.';
             };
 
             renderPrescribedProgression();
