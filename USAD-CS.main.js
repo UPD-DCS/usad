@@ -2319,7 +2319,7 @@
 
         container.innerHTML =
             warningHTML ||
-            `<div style="color: #0f5132; background-color: #d1e7dd; border: 1px solid #badbcc; padding: 5px 6px; border-radius: 4px; font-weight: bold; margin-bottom: 5px; font-size: 13px;">✅ All enlisted courses are eligible based on prerequisites!</div>`;
+            `<div style="color: #0f5132; background-color: #d1e7dd; border: 1px solid #badbcc; padding: 5px 6px; border-radius: 4px; font-weight: bold; margin-bottom: 5px; font-size: 13px;">🟢 All enlisted courses are eligible based on prerequisites!</div>`;
     }
 
     function renderElectivesRequirement(
