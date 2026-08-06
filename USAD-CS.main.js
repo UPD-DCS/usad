@@ -2256,7 +2256,7 @@
         box.innerHTML = `
             <div style="color: ${isComplete ? '#0f5132' : '#41464b'}; background-color: ${isComplete ? '#d1e7dd' : '#f8f9fa'}; border: 1px solid ${isComplete ? '#badbcc' : '#d3d6d8'}; padding: 6px; border-radius: 5px;">
                 <b style="color: #7b1113; font-size: 13px;">📝 PE Requirement</b>
-                <div style="font-size: 12px; margin-top: 2px;"> ${isComplete ? '✅ Required PE Courses Passed' : 'PE Courses Passed'}: <b>${passedCount} / 4</b> </div>
+                <div style="font-size: 12px; margin-top: 2px;"> ${isComplete ? '✅ PE Courses Passed' : 'PE Courses Passed'}: <b>${passedCount} / 4</b> </div>
             </div>`;
     }
 
