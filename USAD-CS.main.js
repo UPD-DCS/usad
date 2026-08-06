@@ -1155,7 +1155,7 @@
     if (totalUnits < minimumRegularUnits) {
         unitDiv.innerHTML = `<div style="color: #664d03; background-color: #fff3cd; border: 1px solid #ffe69c; padding: 5px 6px; border-radius: 4px; margin-top: 5px; font-size: 13px; font-weight: bold;">⚠️ Underloaded: ${totalUnits} units (Apply for underloading) (&lt; ${minimumRegularUnits.toFixed(1)})</div>`;
     } else if (totalUnits > maximumRegularUnits) {
-        unitDiv.innerHTML = `<div style="color: #842029; background-color: #f8d7da; border: 1px solid #f5c2c7; padding: 5px 6px; border-radius: 4px; margin-top: 5px; font-size: 13px; font-weight: bold;">⚠️ Overloaded: ${totalUnits} units (Check Permit to Overload) (&gt; ${maximumRegularUnits.toFixed(1)})</div>`;
+        unitDiv.innerHTML = `<div style="color: #842029; background-color: #f8d7da; border: 1px solid #f5c2c7; padding: 5px 6px; border-radius: 4px; margin-top: 5px; font-size: 13px; font-weight: bold;">⚠️ Overloaded: ${totalUnits} units (Apply for Permit to Overload) (&gt; ${maximumRegularUnits.toFixed(1)})</div>`;
     } else {
         unitDiv.innerHTML = `<div style="color: #0f5132; background-color: #d1e7dd; border: 1px solid #badbcc; padding: 5px 6px; border-radius: 4px; margin-top: 5px; font-size: 13px; font-weight: bold;">🟢 Normal Load: ${totalUnits} units</div>`;
     }
