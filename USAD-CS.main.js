@@ -13,6 +13,58 @@
     const PREREQ_CACHE_KEY = 'crs_prereq_sheet_data';
     const PREREQ_CACHE_TIME_KEY = 'crs_prereq_sheet_time';
     const CACHE_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+    const CHECKLIST_SESSION_CACHE_PREFIX = 'usad_checklist_html_v1_';
+    const CHECKLIST_SESSION_CACHE_INDEX_KEY = 'usad_checklist_html_v1_index';
+    const CHECKLIST_SESSION_CACHE_EXPIRY_MS = 5 * 60 * 1000;
+    const CHECKLIST_SESSION_CACHE_LIMIT = 5;
+    const RECOMMENDATION_RENDER_TARGET_MS = 2000;
+
+    // Bundled fallback matching the prerequisite sheet as of 2026-08-09.
+    // It lets recommendation evaluation begin immediately on a fresh install;
+    // the live sheet still refreshes this data in the background.
+    const BUILT_IN_PREREQ_RULES_ROWS = [
+        ['Course', 'Prerequisite', 'Corequisite', 'Semester Offered', 'with Lab?'],
+        ['CS 10', '', '', '1', '0'],
+        ['CS 11', '', '', '1, 2', '1'],
+        ['CS 12', 'CS 11', '', '1, 2', '1'],
+        ['CS 20', 'CS 12', '', '1, 2', '1'],
+        ['CS 21', 'CS 20', '', '1, 2', '1'],
+        ['CS 30', '', '', '1, 2', '0'],
+        ['CS 31', 'CS 30', '', '1, 2', '0'],
+        ['CS 32', 'CS 12, CS 31', '', '1, 2', '1'],
+        ['CS 33', 'CS 32', '', '1, 2', '1'],
+        ['CS 132', 'CS 31, Math 23, Math 40', '', '1, 2', '0'],
+        ['CS 133', 'CS 30', '', '1, 2', '0'],
+        ['CS 136', 'CS 31, Math 23', '', '2', '0'],
+        ['CS 138', 'CS 136, Math 40', '', '1', '0'],
+        ['CS 140', 'CS 21, CS 32', '', '1', '1'],
+        ['CS 145', 'CS 140', '', '2', '1'],
+        ['CS 150', 'CS 33', '', '1', '1'],
+        ['CS 153', 'CS 140', 'CS 145, CS 192', '2', '0'],
+        ['CS 155', 'CS 21, CS 133, CS 150', '', '2', '1'],
+        ['CS 165', 'CS 33', '', '1', '1'],
+        ['CS 171', '', '', '1, 2', '0'],
+        ['CS 172', '', '', '1, 2', '0'],
+        ['CS 173', '', '', '1, 2', '0'],
+        ['CS 174', '', '', '1, 2', '0'],
+        ['CS 175', '', '', '1, 2', '0'],
+        ['CS 176', '', '', '1, 2', '0'],
+        ['CS 180', 'CS 33', '', '1, 2', '0'],
+        ['CS 191', 'CS 33', 'CS 150, CS 165', '1', '0'],
+        ['CS 192', 'CS 191', '', '2', '1'],
+        ['CS 194', 'JR_STANDING', '', '2', '0'],
+        ['CS 195', 'CS 192', '', 'M', '0'],
+        ['CS 196', 'SR_STANDING', '', '1, 2', '0'],
+        ['CS 198', 'CS 194', '', '1', '1'],
+        ['CS 199', 'CS 198', '', '2', '1'],
+        ['Math 21', '', '', '1, 2, M', '0'],
+        ['Math 22', 'Math 21', '', '1, 2, M', '0'],
+        ['Math 23', 'Math 22', '', '1, 2, M', '0'],
+        ['Math 40', 'Math 22', '', '1, 2, M', '0'],
+        ['Physics 71', 'Math 21', '', '1, 2, M', '0'],
+        ['Physics 72', 'Physics 71', '', '1, 2, M', '0'],
+        ['Engg 150', 'SR_STANDING', '', '1, 2', '0'],
+    ];
 
     // Courses in this easily editable list are always treated as ineligible
     // because an equivalent course already exists in the BSCS curriculum.
@@ -96,7 +148,6 @@
     const GE_LIST_CACHE_TIME_KEY = 'upd_ge_course_list_dynamic_time';
     const GE_LIST_CACHE_SOURCE_KEY = 'upd_ge_course_list_dynamic_source';
     const GE_LIST_CACHE_EXPIRY_MS = 12 * 60 * 60 * 1000;
-    const GE_LIST_INITIAL_WAIT_MS = 1500;
 
     let GE_COURSES_LIST = [];
     let GE_COURSES_NORMALIZED = new Set();
@@ -110,6 +161,11 @@
     let checklistRecommendationDataReady = false;
     let latestPrereqRulesRows = null;
     let recommendationEvaluationVersion = 0;
+    const recommendationLoadStartedAt =
+        typeof performance !== 'undefined' && typeof performance.now === 'function'
+            ? performance.now()
+            : Date.now();
+    let hasLoggedRecommendationRenderTime = false;
 
     // Cached academic summary for the current checklist load. This avoids
     // traversing all checklist entries separately during rendering and again
@@ -910,22 +966,18 @@
         return naturalCourseSort(a.curriculumSlot, b.curriculumSlot);
     }
 
-    // Resolves with refreshed GE data when it arrives quickly, otherwise
-    // releases recommendation evaluation after a short bounded wait.
-    function waitForInitialGECourseList(refreshPromise, waitMs) {
-        return new Promise((resolve) => {
-            const initialWaitTimer = setTimeout(() => {
-                console.warn(
-                    '[USAD-CS] GE refresh is still pending; continuing recommendation evaluation.',
-                );
-                resolve([]);
-            }, waitMs);
+    function getImmediatePrereqRules(cachedRulesRows) {
+        return hasProgressionMetadataColumns(cachedRulesRows)
+            ? cachedRulesRows
+            : BUILT_IN_PREREQ_RULES_ROWS;
+    }
 
-            refreshPromise.then((courses) => {
-                clearTimeout(initialWaitTimer);
-                resolve(courses);
-            });
-        });
+    function isFreshChecklistCacheEntry(entry, now = Date.now()) {
+        return Boolean(
+            entry &&
+            typeof entry.html === 'string' &&
+            now - Number(entry.cachedAt || 0) < CHECKLIST_SESSION_CACHE_EXPIRY_MS,
+        );
     }
 
     // Expose pure helpers only when an explicit test harness requests them.
@@ -951,7 +1003,8 @@
             buildProgressionTermHeading,
             parseSemesterOfferingTerms,
             parseHasLab,
-            waitForInitialGECourseList,
+            getImmediatePrereqRules,
+            isFreshChecklistCacheEntry,
         });
     }
 
@@ -1312,16 +1365,7 @@
         statusDiv.innerText = 'Fetching checklist from server...';
         formattedView.innerHTML = '';
 
-        return fetch('https://crs.upd.edu.ph/curriculum_checklist/load_student', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: new URLSearchParams({ studentno: studentNumber }),
-        })
-            .then((response) => {
-                if (!response.ok) throw new Error(`Server status: ${response.status}`);
-                return response.text();
-            })
-            .then(async (htmlString) => {
+        const processChecklistHtml = async (htmlString) => {
                 const parser = new DOMParser();
                 const doc = parser.parseFromString(htmlString, 'text/html');
 
@@ -1534,9 +1578,10 @@
                         geCourseListReadyPromise,
                         prereqRulesReadyPromise,
                     ]);
-                    if (rulesRows) {
-                        latestPrereqRulesRows = rulesRows;
-                        evaluatePrereqAndEnlisted(rulesRows);
+                    const effectiveRulesRows = latestPrereqRulesRows || rulesRows;
+                    if (effectiveRulesRows) {
+                        latestPrereqRulesRows = effectiveRulesRows;
+                        evaluatePrereqAndEnlisted(effectiveRulesRows);
                     }
                 } catch (err) {
                     console.error('Prereq Init Error:', err);
@@ -1546,12 +1591,100 @@
                         msgDiv.innerText = `Initialization Error: ${err.message}`;
                     }
                 }
-            })
-            .catch((error) => {
-                statusDiv.style.color = 'red';
-                statusDiv.innerText = 'Extraction failed.';
-                console.error(`Checklist Extraction Error: ${error.message}`);
+            };
+
+        const cacheKey = `${CHECKLIST_SESSION_CACHE_PREFIX}${studentNumber}`;
+        const readCachedChecklist = () => {
+            try {
+                const parsed = JSON.parse(sessionStorage.getItem(cacheKey) || 'null');
+                if (!isFreshChecklistCacheEntry(parsed)) {
+                    return null;
+                }
+                return parsed;
+            } catch {
+                return null;
+            }
+        };
+
+        const cacheChecklist = (html) => {
+            try {
+                sessionStorage.setItem(
+                    cacheKey,
+                    JSON.stringify({ html, cachedAt: Date.now() }),
+                );
+                const existingIndex = JSON.parse(
+                    sessionStorage.getItem(CHECKLIST_SESSION_CACHE_INDEX_KEY) || '[]',
+                );
+                const nextIndex = [
+                    cacheKey,
+                    ...(Array.isArray(existingIndex) ? existingIndex : []).filter(
+                        (key) => key !== cacheKey,
+                    ),
+                ];
+                while (nextIndex.length > CHECKLIST_SESSION_CACHE_LIMIT) {
+                    sessionStorage.removeItem(nextIndex.pop());
+                }
+                sessionStorage.setItem(
+                    CHECKLIST_SESSION_CACHE_INDEX_KEY,
+                    JSON.stringify(nextIndex),
+                );
+            } catch (error) {
+                console.warn('[USAD-CS] Could not cache checklist HTML:', error);
+            }
+        };
+
+        const fetchLiveChecklist = () =>
+            fetch('https://crs.upd.edu.ph/curriculum_checklist/load_student', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({ studentno: studentNumber }),
+            }).then((response) => {
+                if (!response.ok) throw new Error(`Server status: ${response.status}`);
+                return response.text();
             });
+
+        const showChecklistError = (error) => {
+            statusDiv.style.color = 'red';
+            statusDiv.innerText = 'Extraction failed.';
+            console.error(`Checklist Extraction Error: ${error.message}`);
+        };
+
+        const cachedChecklist = readCachedChecklist();
+        const liveChecklistPromise = fetchLiveChecklist();
+
+        if (cachedChecklist) {
+            const cachedProcessingPromise = processChecklistHtml(cachedChecklist.html);
+            liveChecklistPromise
+                .then((liveHtml) => {
+                    cacheChecklist(liveHtml);
+                    if (liveHtml !== cachedChecklist.html) {
+                        return processChecklistHtml(liveHtml);
+                    }
+                    return null;
+                })
+                .catch((error) => {
+                    console.warn(
+                        '[USAD-CS] Live checklist refresh failed; retained session cache:',
+                        error,
+                    );
+                });
+
+            return cachedProcessingPromise.catch((error) =>
+                liveChecklistPromise
+                    .then((liveHtml) => {
+                        cacheChecklist(liveHtml);
+                        return processChecklistHtml(liveHtml);
+                    })
+                    .catch(showChecklistError),
+            );
+        }
+
+        return liveChecklistPromise
+            .then((liveHtml) => {
+                cacheChecklist(liveHtml);
+                return processChecklistHtml(liveHtml);
+            })
+            .catch(showChecklistError);
     }
 
     // Adds every passing course from the CRS "Uncredited Courses" table to the
@@ -2277,8 +2410,8 @@
     }
 
     // Loads fresh or stale GE data immediately and refreshes expired data in
-    // the background. A brand-new installation waits only briefly so an
-    // unavailable GEC server cannot block recommendations for 20 seconds.
+    // the background. A brand-new installation proceeds without dynamic GE
+    // data so an unavailable GEC server never blocks recommendations.
     function loadGECourseList() {
         const cachedCourses = (() => {
             try {
@@ -2341,7 +2474,8 @@
             return Promise.resolve(GE_COURSES_LIST);
         }
 
-        return waitForInitialGECourseList(refreshPromise, GE_LIST_INITIAL_WAIT_MS);
+        console.log('[USAD-CS] Refreshing GE data in the background.');
+        return Promise.resolve([]);
     }
 
     // Escapes regular-expression metacharacters in a literal text value.
@@ -2584,8 +2718,8 @@
     // -------------------------------------------------------------------------
     // 9. Prerequisite, requirement, and enlistment evaluation
     // -------------------------------------------------------------------------
-    // Loads prerequisite rules from cache or Google Sheets. The request begins
-    // alongside checklist and GE loading; evaluation starts after checklist parsing.
+    // Returns cached or bundled prerequisite rules immediately, then refreshes
+    // expired data from Google Sheets without blocking recommendation rendering.
     function loadPrereqRules() {
         const msgDiv = document.getElementById('prereq-status-msg');
         msgDiv.innerText = 'Evaluating course prerequisites...';
@@ -2593,29 +2727,18 @@
         const cachedRules = localStorage.getItem(PREREQ_CACHE_KEY);
         const cachedRulesTime = localStorage.getItem(PREREQ_CACHE_TIME_KEY);
         const cachedRulesRows = cachedRules ? parseCSV(cachedRules) : null;
-        const cachedRulesAreValid =
-            hasProgressionMetadataColumns(cachedRulesRows);
-        const useStaleValidCacheOrReject = (message, resolve, reject) => {
-            if (cachedRulesAreValid) {
-                console.warn(`[USAD-CS] ${message} Using cached rules instead.`);
-                resolve(cachedRulesRows);
-                return;
-            }
-
-            msgDiv.style.color = 'red';
-            msgDiv.innerText = message;
-            reject(new Error(message));
-        };
+        const cachedRulesAreValid = hasProgressionMetadataColumns(cachedRulesRows);
+        const initialRulesRows = getImmediatePrereqRules(cachedRulesRows);
 
         if (
             cachedRulesAreValid &&
             cachedRulesTime &&
             Date.now() - parseInt(cachedRulesTime, 10) < CACHE_EXPIRY_MS
         ) {
-            return Promise.resolve(cachedRulesRows);
+            return Promise.resolve(initialRulesRows);
         }
 
-        return new Promise((resolve, reject) => {
+        const refreshPromise = new Promise((resolve, reject) => {
             GM_xmlhttpRequest({
                 method: 'GET',
                 url: PREREQ_CSV_URL,
@@ -2623,20 +2746,16 @@
                 onload: function (res) {
                     if (res.status === 200) {
                         if (isHTMLResponse(res.responseText)) {
-                            useStaleValidCacheOrReject(
-                                'Google Sheets access was denied. Allow link access to the rules sheet and reload.',
-                                resolve,
-                                reject,
-                            );
+                            reject(new Error('Google Sheets access was denied.'));
                             return;
                         }
 
                         const freshRulesRows = parseCSV(res.responseText);
                         if (!hasProgressionMetadataColumns(freshRulesRows)) {
-                            useStaleValidCacheOrReject(
-                                'Rules sheet columns 4 and 5 must contain offering codes (1, 2, or M) and lab flags (0 or 1).',
-                                resolve,
-                                reject,
+                            reject(
+                                new Error(
+                                    'Rules sheet is missing valid offering and lab metadata.',
+                                ),
                             );
                             return;
                         }
@@ -2645,29 +2764,41 @@
                         localStorage.setItem(PREREQ_CACHE_TIME_KEY, Date.now().toString());
                         resolve(freshRulesRows);
                     } else {
-                        useStaleValidCacheOrReject(
-                            `Failed to load prerequisite rules sheet (HTTP ${res.status}).`,
-                            resolve,
-                            reject,
+                        reject(
+                            new Error(
+                                `Failed to load prerequisite rules sheet (HTTP ${res.status}).`,
+                            ),
                         );
                     }
                 },
                 onerror: function () {
-                    useStaleValidCacheOrReject(
-                        'Unable to connect to the prerequisite rules sheet.',
-                        resolve,
-                        reject,
-                    );
+                    reject(new Error('Unable to connect to the prerequisite rules sheet.'));
                 },
                 ontimeout: function () {
-                    useStaleValidCacheOrReject(
-                        'Prerequisite rules request timed out.',
-                        resolve,
-                        reject,
-                    );
+                    reject(new Error('Prerequisite rules request timed out.'));
                 },
             });
-        });
+        })
+            .then((freshRulesRows) => {
+                const rulesChanged =
+                    JSON.stringify(freshRulesRows) !== JSON.stringify(initialRulesRows);
+                latestPrereqRulesRows = freshRulesRows;
+                if (rulesChanged && checklistRecommendationDataReady) {
+                    evaluatePrereqAndEnlisted(freshRulesRows);
+                }
+                return freshRulesRows;
+            })
+            .catch((error) => {
+                console.warn(
+                    '[USAD-CS] Prerequisite refresh failed; continuing with immediate fallback:',
+                    error,
+                );
+                return initialRulesRows;
+            });
+
+        // Keep the refresh alive, but do not put it on the initial render path.
+        void refreshPromise;
+        return Promise.resolve(initialRulesRows);
     }
 
     // Evaluates prerequisites, corequisites, completed courses, enlistments, recommendations, and requirement summaries.
@@ -4455,7 +4586,13 @@
                     'Below is indicative sequence for the current enlistment and all remaining courses in the curriculum. Courses highlighed in green are currently enlisted.';
             };
 
-            renderPrescribedProgression();
+            const schedulePrescribedProgression = () => {
+                setTimeout(() => {
+                    if (evaluationVersion === recommendationEvaluationVersion) {
+                        renderPrescribedProgression();
+                    }
+                }, 0);
+            };
 
             // 9.10 Group, render, and verify course recommendations.
             const unenlistedEligible = Array.from(eligibleCoursesMap.entries())
@@ -4485,6 +4622,7 @@
             if (unenlistedEligible.length === 0) {
                 msgDiv.innerText = 'No remaining eligible courses available.';
                 if (listDiv) listDiv.innerHTML = '';
+                schedulePrescribedProgression();
                 return;
             }
 
@@ -4583,6 +4721,23 @@
             };
 
             renderRecommendations();
+            if (!hasLoggedRecommendationRenderTime) {
+                hasLoggedRecommendationRenderTime = true;
+                const now =
+                    typeof performance !== 'undefined' &&
+                    typeof performance.now === 'function'
+                        ? performance.now()
+                        : Date.now();
+                const elapsedMs = Math.max(0, Math.round(now - recommendationLoadStartedAt));
+                if (listDiv) listDiv.dataset.initialRenderMs = String(elapsedMs);
+                console.log(`[USAD-CS] Recommended courses rendered in ${elapsedMs} ms.`);
+                if (elapsedMs > RECOMMENDATION_RENDER_TARGET_MS) {
+                    console.warn(
+                        `[USAD-CS] Recommendation render exceeded the ${RECOMMENDATION_RENDER_TARGET_MS} ms target.`,
+                    );
+                }
+            }
+            schedulePrescribedProgression();
 
             const allRecommendedItems = Object.values(categories).flat().filter(
                 (item, index, items) =>
@@ -4609,7 +4764,6 @@
                 );
                 const lookupFailed = results.some(([, , error]) => Boolean(error));
                 renderRecommendations(availabilityByCourse, lookupFailed);
-                renderPrescribedProgression();
 
                 msgDiv.style.color = lookupFailed ? '#856404' : '#666';
                 msgDiv.innerText = lookupFailed

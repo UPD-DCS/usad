@@ -168,6 +168,7 @@ function buildFixturePage(version) {
             };
 
             localStorage.clear();
+            sessionStorage.clear();
             localStorage.setItem('crs_prereq_sheet_data', ${JSON.stringify(prerequisiteCsv)});
             localStorage.setItem('crs_prereq_sheet_time', String(Date.now()));
             if (scenario !== 'ge-placeholder') {
