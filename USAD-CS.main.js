@@ -96,6 +96,7 @@
     const GE_LIST_CACHE_TIME_KEY = 'upd_ge_course_list_dynamic_time';
     const GE_LIST_CACHE_SOURCE_KEY = 'upd_ge_course_list_dynamic_source';
     const GE_LIST_CACHE_EXPIRY_MS = 12 * 60 * 60 * 1000;
+    const GE_LIST_INITIAL_WAIT_MS = 1500;
 
     let GE_COURSES_LIST = [];
     let GE_COURSES_NORMALIZED = new Set();
@@ -105,6 +106,10 @@
     // checklist request and GE-list initialization start concurrently, while
     // prerequisite evaluation waits until the GE lookup is ready.
     let geCourseListReadyPromise = Promise.resolve([]);
+    let prereqRulesReadyPromise = Promise.resolve(null);
+    let checklistRecommendationDataReady = false;
+    let latestPrereqRulesRows = null;
+    let recommendationEvaluationVersion = 0;
 
     // Cached academic summary for the current checklist load. This avoids
     // traversing all checklist entries separately during rendering and again
@@ -905,6 +910,24 @@
         return naturalCourseSort(a.curriculumSlot, b.curriculumSlot);
     }
 
+    // Resolves with refreshed GE data when it arrives quickly, otherwise
+    // releases recommendation evaluation after a short bounded wait.
+    function waitForInitialGECourseList(refreshPromise, waitMs) {
+        return new Promise((resolve) => {
+            const initialWaitTimer = setTimeout(() => {
+                console.warn(
+                    '[USAD-CS] GE refresh is still pending; continuing recommendation evaluation.',
+                );
+                resolve([]);
+            }, waitMs);
+
+            refreshPromise.then((courses) => {
+                clearTimeout(initialWaitTimer);
+                resolve(courses);
+            });
+        });
+    }
+
     // Expose pure helpers only when an explicit test harness requests them.
     // Normal userscript execution does not add anything to the global object.
     if (globalThis.__USAD_CS_TEST_MODE__) {
@@ -928,6 +951,7 @@
             buildProgressionTermHeading,
             parseSemesterOfferingTerms,
             parseHasLab,
+            waitForInitialGECourseList,
         });
     }
 
@@ -1139,8 +1163,19 @@
                 return [];
             });
 
+        // Start the prerequisite-rules request at the same time as the GE and
+        // checklist workflows. Evaluation still waits for checklist parsing,
+        // but it no longer starts this independent network request afterward.
+        prereqRulesReadyPromise = loadPrereqRules().catch((error) => {
+            console.error('[USAD-CS] Prerequisite rules loading failed:', error);
+            return null;
+        });
         const checklistPromise = silentFetchChecklist(studentId);
-        await Promise.allSettled([geCourseListReadyPromise, checklistPromise]);
+        await Promise.allSettled([
+            geCourseListReadyPromise,
+            prereqRulesReadyPromise,
+            checklistPromise,
+        ]);
     }
 
     // -------------------------------------------------------------------------
@@ -1489,12 +1524,20 @@
                 statusDiv.style.display = 'none';
 
                 renderFormattedChecklist(formattedView);
+                checklistRecommendationDataReady = true;
 
                 try {
-                    // Prerequisite and recommendation logic depends on the GE
-                    // lookup, so wait here without delaying checklist extraction.
-                    await geCourseListReadyPromise;
-                    loadPrereqRulesAndEvaluate();
+                    // The independent GE and prerequisite-rule workflows began
+                    // with checklist loading. Wait only for their bounded/cache
+                    // results before evaluating the parsed checklist.
+                    const [, rulesRows] = await Promise.all([
+                        geCourseListReadyPromise,
+                        prereqRulesReadyPromise,
+                    ]);
+                    if (rulesRows) {
+                        latestPrereqRulesRows = rulesRows;
+                        evaluatePrereqAndEnlisted(rulesRows);
+                    }
                 } catch (err) {
                     console.error('Prereq Init Error:', err);
                     const msgDiv = document.getElementById('prereq-status-msg');
@@ -1999,8 +2042,43 @@
     // subject initial. A course is available when an exact course-code match
     // appears in at least one CRS class row.
     const CRS_SCHEDULE_ROOT = 'https://crs.upd.edu.ph/schedule/';
+    const CRS_SCHEDULE_CACHE_KEY = 'usad_crs_schedule_availability_v1';
+    const CRS_SCHEDULE_CACHE_EXPIRY_MS = 15 * 60 * 1000;
     let crsScheduleTermBasePromise = null;
     const crsScheduleLetterPagePromises = new Map();
+    let crsSchedulePersistentCache = (() => {
+        try {
+            const parsed = JSON.parse(localStorage.getItem(CRS_SCHEDULE_CACHE_KEY) || '{}');
+            return {
+                termBase: typeof parsed.termBase === 'string' ? parsed.termBase : '',
+                cachedAt: Number(parsed.cachedAt) || 0,
+                availability:
+                    parsed.availability && typeof parsed.availability === 'object'
+                        ? parsed.availability
+                        : {},
+            };
+        } catch {
+            return { termBase: '', cachedAt: 0, availability: {} };
+        }
+    })();
+
+    function isCrsScheduleCacheFresh() {
+        return (
+            Boolean(crsSchedulePersistentCache.termBase) &&
+            Date.now() - crsSchedulePersistentCache.cachedAt < CRS_SCHEDULE_CACHE_EXPIRY_MS
+        );
+    }
+
+    function saveCrsSchedulePersistentCache() {
+        try {
+            localStorage.setItem(
+                CRS_SCHEDULE_CACHE_KEY,
+                JSON.stringify(crsSchedulePersistentCache),
+            );
+        } catch (error) {
+            console.warn('[USAD-CS] Could not persist CRS schedule cache:', error);
+        }
+    }
 
     // Performs a cross-origin userscript GET request and resolves with the response body as text.
     function gmGetText(url) {
@@ -2173,8 +2251,35 @@
         return courses;
     }
 
-    // Loads the GE course list from fresh cache or from the current GEC webpage and linked PDF.
-    async function loadGECourseList() {
+    // Refreshes the GE cache from the current GEC webpage and linked PDF.
+    async function refreshGECourseList(cachedCourses, cachedSource) {
+        // Check the lightweight GEC webpage first. If it still links to the same
+        // PDF, reuse the extracted list and renew its timestamp.
+        const pageHTML = await gmGetText(GEC_GE_PAGE_URL);
+        const pdfUrl = findGECoursePdfUrl(pageHTML);
+
+        if (cachedCourses.length >= 10 && cachedSource && pdfUrl === cachedSource) {
+            localStorage.setItem(GE_LIST_CACHE_TIME_KEY, String(Date.now()));
+            setGECourseList(cachedCourses, cachedSource);
+            console.log('[USAD-CS] GE PDF link is unchanged; reused extracted GE cache.');
+            return GE_COURSES_LIST;
+        }
+
+        const pdfBytes = await gmGetArrayBuffer(pdfUrl);
+        const courses = await extractGECoursesFromPdf(pdfBytes);
+
+        localStorage.setItem(GE_LIST_CACHE_KEY, JSON.stringify(courses));
+        localStorage.setItem(GE_LIST_CACHE_TIME_KEY, String(Date.now()));
+        localStorage.setItem(GE_LIST_CACHE_SOURCE_KEY, pdfUrl);
+
+        setGECourseList(courses, pdfUrl);
+        return GE_COURSES_LIST;
+    }
+
+    // Loads fresh or stale GE data immediately and refreshes expired data in
+    // the background. A brand-new installation waits only briefly so an
+    // unavailable GEC server cannot block recommendations for 20 seconds.
+    function loadGECourseList() {
         const cachedCourses = (() => {
             try {
                 const parsed = JSON.parse(localStorage.getItem(GE_LIST_CACHE_KEY) || '[]');
@@ -2186,53 +2291,57 @@
 
         const cachedTime = Number(localStorage.getItem(GE_LIST_CACHE_TIME_KEY) || 0);
         const cachedSource = localStorage.getItem(GE_LIST_CACHE_SOURCE_KEY) || '';
+        const hasUsableCache = cachedCourses.length >= 10;
         const cacheIsFresh =
-            cachedCourses.length >= 10 &&
+            hasUsableCache &&
             Number.isFinite(cachedTime) &&
             Date.now() - cachedTime < GE_LIST_CACHE_EXPIRY_MS;
 
         if (cacheIsFresh) {
             setGECourseList(cachedCourses, cachedSource || 'GEC cache');
-            return GE_COURSES_LIST;
+            return Promise.resolve(GE_COURSES_LIST);
         }
 
-        try {
-            // After cache expiry, check the lightweight GEC webpage first. If
-            // it still links to the same PDF, reuse the already extracted list
-            // and simply renew its timestamp instead of downloading and parsing
-            // the unchanged PDF again.
-            const pageHTML = await gmGetText(GEC_GE_PAGE_URL);
-            const pdfUrl = findGECoursePdfUrl(pageHTML);
+        if (hasUsableCache) {
+            setGECourseList(cachedCourses, cachedSource || 'stale GEC cache');
+        }
 
-            if (cachedCourses.length >= 10 && cachedSource && pdfUrl === cachedSource) {
-                localStorage.setItem(GE_LIST_CACHE_TIME_KEY, String(Date.now()));
-                setGECourseList(cachedCourses, cachedSource);
-                console.log(
-                    '[USAD-CS] GE PDF link is unchanged; reused extracted GE cache.',
+        const refreshPromise = refreshGECourseList(cachedCourses, cachedSource)
+            .then((courses) => {
+                // A first-time load may have continued after the short wait.
+                // Re-evaluate once when dynamic GE data arrives so the fast
+                // provisional result is replaced with an accurate one.
+                if (
+                    !hasUsableCache &&
+                    checklistRecommendationDataReady &&
+                    latestPrereqRulesRows
+                ) {
+                    evaluatePrereqAndEnlisted(latestPrereqRulesRows);
+                }
+                return courses;
+            })
+            .catch((error) => {
+                if (hasUsableCache) {
+                    console.warn(
+                        '[USAD-CS] GE refresh failed; continuing with stale cache:',
+                        error,
+                    );
+                    return GE_COURSES_LIST;
+                }
+
+                console.warn(
+                    '[USAD-CS] GE refresh failed; continuing without dynamic GE data:',
+                    error,
                 );
-                return GE_COURSES_LIST;
-            }
+                return [];
+            });
 
-            const pdfBytes = await gmGetArrayBuffer(pdfUrl);
-            const courses = await extractGECoursesFromPdf(pdfBytes);
-
-            localStorage.setItem(GE_LIST_CACHE_KEY, JSON.stringify(courses));
-            localStorage.setItem(GE_LIST_CACHE_TIME_KEY, String(Date.now()));
-            localStorage.setItem(GE_LIST_CACHE_SOURCE_KEY, pdfUrl);
-
-            setGECourseList(courses, pdfUrl);
-            return GE_COURSES_LIST;
-        } catch (error) {
-            // A stale cache remains safer than an empty GE list during a temporary
-            // GEC outage or a PDF-layout change.
-            if (cachedCourses.length >= 10) {
-                setGECourseList(cachedCourses, cachedSource || 'stale GEC cache');
-                console.warn('[USAD-CS] Using stale GE cache:', error);
-                return GE_COURSES_LIST;
-            }
-
-            throw error;
+        if (hasUsableCache) {
+            console.log('[USAD-CS] Using stale GE cache while refreshing in the background.');
+            return Promise.resolve(GE_COURSES_LIST);
         }
+
+        return waitForInitialGECourseList(refreshPromise, GE_LIST_INITIAL_WAIT_MS);
     }
 
     // Escapes regular-expression metacharacters in a literal text value.
@@ -2395,6 +2504,11 @@
     function getCrsScheduleTermBase() {
         if (crsScheduleTermBasePromise) return crsScheduleTermBasePromise;
 
+        if (isCrsScheduleCacheFresh()) {
+            crsScheduleTermBasePromise = Promise.resolve(crsSchedulePersistentCache.termBase);
+            return crsScheduleTermBasePromise;
+        }
+
         crsScheduleTermBasePromise = gmGetText(CRS_SCHEDULE_ROOT).then((html) => {
             const doc = new DOMParser().parseFromString(html, 'text/html');
             const links = Array.from(doc.querySelectorAll('a[href]'));
@@ -2405,27 +2519,34 @@
 
             const match = letterLink.href.match(/^(https:\/\/crs\.upd\.edu\.ph\/schedule\/\d+\/)/i);
             if (!match) throw new Error('Unexpected CRS schedule URL format');
-            return match[1];
+
+            crsSchedulePersistentCache = {
+                termBase: match[1],
+                cachedAt: Date.now(),
+                availability: {},
+            };
+            saveCrsSchedulePersistentCache();
+            return crsSchedulePersistentCache.termBase;
         });
 
         return crsScheduleTermBasePromise;
     }
 
     // Fetches and caches the active CRS schedule page for a subject's initial letter.
-    function getCrsLetterPage(letter) {
+    function getCrsLetterPage(letter, termBase) {
         const initial = String(letter || '')
             .charAt(0)
             .toUpperCase();
         if (!/^[A-Z]$/.test(initial)) return Promise.resolve(null);
-        if (crsScheduleLetterPagePromises.has(initial)) {
-            return crsScheduleLetterPagePromises.get(initial);
+        const requestKey = `${termBase}${initial}`;
+        if (crsScheduleLetterPagePromises.has(requestKey)) {
+            return crsScheduleLetterPagePromises.get(requestKey);
         }
 
-        const request = getCrsScheduleTermBase()
-            .then((base) => gmGetText(`${base}${initial}`))
+        const request = gmGetText(`${termBase}${initial}`)
             .then((html) => new DOMParser().parseFromString(html, 'text/html'));
 
-        crsScheduleLetterPagePromises.set(initial, request);
+        crsScheduleLetterPagePromises.set(requestKey, request);
         return request;
     }
 
@@ -2434,24 +2555,38 @@
         const courseCode = getSearchableCourseCode(courseName);
         if (!courseCode) return false;
 
-        const doc = await getCrsLetterPage(courseCode.charAt(0));
+        const termBase = await getCrsScheduleTermBase();
+        if (
+            isCrsScheduleCacheFresh() &&
+            crsSchedulePersistentCache.termBase === termBase &&
+            typeof crsSchedulePersistentCache.availability[courseCode] === 'boolean'
+        ) {
+            return crsSchedulePersistentCache.availability[courseCode];
+        }
+
+        const doc = await getCrsLetterPage(courseCode.charAt(0), termBase);
         if (!doc) return false;
 
         const exactCodePattern = escapeRegExp(courseCode).replace(/\\ /g, '\\s+');
         const classRowPattern = new RegExp(`^\\s*\\d+\\s+${exactCodePattern}(?=\\s|$)`, 'i');
 
         // CRS class rows begin with the numeric class code followed by the course.
-        return Array.from(doc.querySelectorAll('tr')).some((row) => {
+        const offered = Array.from(doc.querySelectorAll('tr')).some((row) => {
             const rowText = (row.innerText || row.textContent || '').replace(/\s+/g, ' ').trim();
             return classRowPattern.test(rowText);
         });
+
+        crsSchedulePersistentCache.availability[courseCode] = offered;
+        saveCrsSchedulePersistentCache();
+        return offered;
     }
 
     // -------------------------------------------------------------------------
     // 9. Prerequisite, requirement, and enlistment evaluation
     // -------------------------------------------------------------------------
-    // Loads prerequisite rules from cache or Google Sheets, then starts checklist and enlistment evaluation.
-    function loadPrereqRulesAndEvaluate() {
+    // Loads prerequisite rules from cache or Google Sheets. The request begins
+    // alongside checklist and GE loading; evaluation starts after checklist parsing.
+    function loadPrereqRules() {
         const msgDiv = document.getElementById('prereq-status-msg');
         msgDiv.innerText = 'Evaluating course prerequisites...';
 
@@ -2460,15 +2595,16 @@
         const cachedRulesRows = cachedRules ? parseCSV(cachedRules) : null;
         const cachedRulesAreValid =
             hasProgressionMetadataColumns(cachedRulesRows);
-        const useStaleValidCacheOrShowError = (message) => {
+        const useStaleValidCacheOrReject = (message, resolve, reject) => {
             if (cachedRulesAreValid) {
                 console.warn(`[USAD-CS] ${message} Using cached rules instead.`);
-                evaluatePrereqAndEnlisted(cachedRulesRows);
+                resolve(cachedRulesRows);
                 return;
             }
 
             msgDiv.style.color = 'red';
             msgDiv.innerText = message;
+            reject(new Error(message));
         };
 
         if (
@@ -2476,49 +2612,68 @@
             cachedRulesTime &&
             Date.now() - parseInt(cachedRulesTime, 10) < CACHE_EXPIRY_MS
         ) {
-            evaluatePrereqAndEnlisted(cachedRulesRows);
-        } else {
+            return Promise.resolve(cachedRulesRows);
+        }
+
+        return new Promise((resolve, reject) => {
             GM_xmlhttpRequest({
                 method: 'GET',
                 url: PREREQ_CSV_URL,
+                timeout: 10000,
                 onload: function (res) {
                     if (res.status === 200) {
                         if (isHTMLResponse(res.responseText)) {
-                            useStaleValidCacheOrShowError(
+                            useStaleValidCacheOrReject(
                                 'Google Sheets access was denied. Allow link access to the rules sheet and reload.',
+                                resolve,
+                                reject,
                             );
                             return;
                         }
 
                         const freshRulesRows = parseCSV(res.responseText);
                         if (!hasProgressionMetadataColumns(freshRulesRows)) {
-                            useStaleValidCacheOrShowError(
+                            useStaleValidCacheOrReject(
                                 'Rules sheet columns 4 and 5 must contain offering codes (1, 2, or M) and lab flags (0 or 1).',
+                                resolve,
+                                reject,
                             );
                             return;
                         }
 
                         localStorage.setItem(PREREQ_CACHE_KEY, res.responseText);
                         localStorage.setItem(PREREQ_CACHE_TIME_KEY, Date.now().toString());
-                        evaluatePrereqAndEnlisted(freshRulesRows);
+                        resolve(freshRulesRows);
                     } else {
-                        useStaleValidCacheOrShowError(
+                        useStaleValidCacheOrReject(
                             `Failed to load prerequisite rules sheet (HTTP ${res.status}).`,
+                            resolve,
+                            reject,
                         );
                     }
                 },
                 onerror: function () {
-                    useStaleValidCacheOrShowError(
+                    useStaleValidCacheOrReject(
                         'Unable to connect to the prerequisite rules sheet.',
+                        resolve,
+                        reject,
+                    );
+                },
+                ontimeout: function () {
+                    useStaleValidCacheOrReject(
+                        'Prerequisite rules request timed out.',
+                        resolve,
+                        reject,
                     );
                 },
             });
-        }
+        });
     }
 
     // Evaluates prerequisites, corequisites, completed courses, enlistments, recommendations, and requirement summaries.
     function evaluatePrereqAndEnlisted(rulesRows) {
         const msgDiv = document.getElementById('prereq-status-msg');
+        const evaluationVersion = ++recommendationEvaluationVersion;
 
         // Normalize the editable equivalency list with the same canonical
         // course-code rules used for checklist and enlisted-course matching.
@@ -4443,6 +4598,8 @@
                     }
                 }),
             ).then((results) => {
+                if (evaluationVersion !== recommendationEvaluationVersion) return;
+
                 // Only successful lookups establish availability. A network
                 // failure must remain unknown instead of showing a false ❌.
                 const availabilityByCourse = new Map(

@@ -5,11 +5,13 @@ const vm = require('vm');
 const source = fs.readFileSync('USAD-CS.main.js', 'utf8');
 const context = {
     console,
+    clearTimeout,
     document: {
         title: '',
         querySelector: () => null,
         querySelectorAll: () => [],
     },
+    setTimeout,
     __USAD_CS_TEST_MODE__: true,
 };
 context.globalThis = context;
@@ -34,6 +36,7 @@ const {
     isValidProgressionCourseSet,
     getNextTermCode,
     buildProgressionTermHeading,
+    waitForInitialGECourseList,
 } = context.__USAD_CS_INTERNALS__;
 
 assert.equal(normalizeCode('GE 3: Soc Sci 1 THV'), 'SOCSCI1');
@@ -241,4 +244,28 @@ assert.ok(
     ),
 );
 
-console.log('USAD-CS regression tests passed.');
+assert.ok(source.includes('const GE_LIST_INITIAL_WAIT_MS = 1500;'));
+assert.ok(source.includes('Using stale GE cache while refreshing in the background.'));
+assert.ok(source.includes('prereqRulesReadyPromise = loadPrereqRules().catch'));
+assert.ok(source.includes("'Prerequisite rules request timed out.'"));
+assert.ok(source.includes('const CRS_SCHEDULE_CACHE_EXPIRY_MS = 15 * 60 * 1000;'));
+assert.ok(!source.includes('function loadPrereqRulesAndEvaluate()'));
+
+Promise.resolve()
+    .then(async () => {
+        const immediateCourses = await waitForInitialGECourseList(
+            Promise.resolve(['ARTS 1']),
+            25,
+        );
+        assert.deepEqual(Array.from(immediateCourses), ['ARTS 1']);
+
+        const waitStartedAt = Date.now();
+        const boundedCourses = await waitForInitialGECourseList(new Promise(() => {}), 10);
+        assert.deepEqual(Array.from(boundedCourses), []);
+        assert.ok(Date.now() - waitStartedAt < 100);
+    })
+    .then(() => console.log('USAD-CS regression tests passed.'))
+    .catch((error) => {
+        console.error(error);
+        process.exitCode = 1;
+    });
