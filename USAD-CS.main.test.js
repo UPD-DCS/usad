@@ -25,6 +25,7 @@ const {
     parseRequirementList,
     parsePrerequisiteRules,
     applyCurriculumSpecificRuleOverrides,
+    ensureEnlistedMath20ChecklistEntry,
     isZeroAcademicUnitCourse,
     getCourseUnitValues,
     getPairedGeOption,
@@ -96,6 +97,49 @@ const curriculumRulesWithMath20 = applyCurriculumSpecificRuleOverrides(
 assert.ok(curriculumRulesWithMath20.ruleByCode.has('MATH20'));
 assert.deepEqual(
     Array.from(curriculumRulesWithMath20.ruleByCode.get('MATH21').prerequisites),
+    ['Math 20'],
+);
+
+const checklistMissingEnlistedMath20 = new Map([
+    [
+        'MATH21___0',
+        {
+            rawName: 'Math 21',
+            curriculumSlot: 'Math 21',
+            completedCourse: 'Math 21',
+        },
+    ],
+]);
+assert.equal(
+    ensureEnlistedMath20ChecklistEntry(
+        checklistMissingEnlistedMath20,
+        ['Math 20 TWHFU'],
+    ),
+    true,
+);
+assert.equal(checklistMissingEnlistedMath20.get('MATH20___enlisted').units, '(4)');
+assert.equal(
+    checklistMissingEnlistedMath20.get('MATH20___enlisted').category,
+    'Core Courses',
+);
+assert.equal(
+    ensureEnlistedMath20ChecklistEntry(
+        checklistMissingEnlistedMath20,
+        ['Math 20 TWHFU'],
+    ),
+    false,
+);
+const curriculumRulesFromSyntheticMath20 = applyCurriculumSpecificRuleOverrides(
+    parsePrerequisiteRules([
+        ['Course', 'Prerequisite', 'Corequisite', 'Semester', 'Lab'],
+        ['Math 21', '', '', '1,2,M', '0'],
+    ]),
+    Array.from(checklistMissingEnlistedMath20.values()),
+);
+assert.deepEqual(
+    Array.from(
+        curriculumRulesFromSyntheticMath20.ruleByCode.get('MATH21').prerequisites,
+    ),
     ['Math 20'],
 );
 

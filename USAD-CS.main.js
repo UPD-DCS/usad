@@ -658,7 +658,8 @@
 
     // Applies curriculum-specific rules that cannot be expressed globally in
     // the shared prerequisite sheet. Math 20 is a bridging course: only
-    // curricula that contain it should require it before Math 21.
+    // checklist entries that contain it should require it before Math 21.
+    // A currently enlisted Math 20 is inserted into that checklist first.
     function applyCurriculumSpecificRuleOverrides(parsedRules, checklistEntries) {
         const hasMath20 = checklistEntries.some((data) =>
             getChecklistEntryCodes(data).includes('MATH20'),
@@ -690,6 +691,39 @@
         }
 
         return parsedRules;
+    }
+
+    // Adds the non-credit bridging course to the mini checklist when CRS shows
+    // it as currently enlisted but the curriculum checklist omits it.
+    function ensureEnlistedMath20ChecklistEntry(
+        checklistEntryMap,
+        currentlyEnlistedCourseCodes,
+    ) {
+        const alreadyListed = Array.from(checklistEntryMap.values()).some((data) =>
+            getChecklistEntryCodes(data).includes('MATH20'),
+        );
+        const isEnlisted = currentlyEnlistedCourseCodes.some(
+            (courseCode) => normalizeCode(courseCode) === 'MATH20',
+        );
+        if (alreadyListed || !isEnlisted) return false;
+
+        checklistEntryMap.set('MATH20___enlisted', {
+            grade: 'null',
+            rawName: 'Math 20',
+            curriculumSlot: 'Math 20',
+            completedCourse: 'Math 20',
+            semester: '--',
+            units: '(4)',
+            normalizedRawName: 'MATH20',
+            normalizedCurriculumSlot: 'MATH20',
+            normalizedCompletedCourse: 'MATH20',
+            category: COURSE_CATEGORIES.CORE,
+            isPE: false,
+            isNSTP: false,
+            isGE: false,
+            isCurrentlyEnlisted: true,
+        });
+        return true;
     }
 
     function isZeroAcademicUnitCourse(courseName, category = '') {
@@ -1056,6 +1090,7 @@
             parseRequirementList,
             parsePrerequisiteRules,
             applyCurriculumSpecificRuleOverrides,
+            ensureEnlistedMath20ChecklistEntry,
             isZeroAcademicUnitCourse,
             getCourseUnitValues,
             getPairedGeOption,
@@ -1621,6 +1656,20 @@
                         isGE: category === 'Required GE Courses',
                     });
                 });
+
+                const currentlyEnlistedCourseCodes = Array.from(
+                    document.querySelectorAll('table.classlist td.td_coursedesc'),
+                )
+                    .map((cell) =>
+                        parseCourseCodeFromClassDescription(
+                            cell.innerText || cell.textContent || '',
+                        ),
+                    )
+                    .filter(Boolean);
+                ensureEnlistedMath20ChecklistEntry(
+                    extractedStudentGrades,
+                    currentlyEnlistedCourseCodes,
+                );
 
                 // Uncredited courses are outside #tblCourseGroupView. Include
                 // their passing grades in duplicate-course and prerequisite checks.
