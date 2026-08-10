@@ -57,6 +57,7 @@
         ['CS 196', 'SR_STANDING', '', '1, 2', '0'],
         ['CS 198', 'CS 194', '', '1', '1'],
         ['CS 199', 'CS 198', '', '2', '1'],
+        ['Math 20', '', '', '1, 2, M', '0'],
         ['Math 21', '', '', '1, 2, M', '0'],
         ['Math 22', 'Math 21', '', '1, 2, M', '0'],
         ['Math 23', 'Math 22', '', '1, 2, M', '0'],
@@ -94,6 +95,7 @@
         COURSE_CATEGORIES.NSTP,
         COURSE_CATEGORIES.PE,
     ]);
+    const ZERO_ACADEMIC_UNIT_COURSE_CODES = new Set(['MATH20']);
     const ACRONYM_SUBJECTS = new Set([
         'BIO',
         'CS',
@@ -654,6 +656,75 @@
         return { rules, ruleByCode };
     }
 
+    // Applies curriculum-specific rules that cannot be expressed globally in
+    // the shared prerequisite sheet. Math 20 is a bridging course: only
+    // curricula that contain it should require it before Math 21.
+    function applyCurriculumSpecificRuleOverrides(parsedRules, checklistEntries) {
+        const hasMath20 = checklistEntries.some((data) =>
+            getChecklistEntryCodes(data).includes('MATH20'),
+        );
+        if (!hasMath20) return parsedRules;
+
+        let math20Rule = parsedRules.ruleByCode.get('MATH20');
+        if (!math20Rule) {
+            math20Rule = {
+                course: 'Math 20',
+                normCourse: 'MATH20',
+                prerequisites: [],
+                corequisites: [],
+                semesterOffered: ['1', '2', 'M'],
+                hasLab: false,
+            };
+            parsedRules.rules.push(math20Rule);
+            parsedRules.ruleByCode.set(math20Rule.normCourse, math20Rule);
+        }
+
+        const math21Rule = parsedRules.ruleByCode.get('MATH21');
+        if (
+            math21Rule &&
+            !math21Rule.prerequisites.some(
+                (requirement) => normalizeCode(requirement) === 'MATH20',
+            )
+        ) {
+            math21Rule.prerequisites.push('Math 20');
+        }
+
+        return parsedRules;
+    }
+
+    function isZeroAcademicUnitCourse(courseName, category = '') {
+        return (
+            NON_ACADEMIC_CATEGORIES.has(category) ||
+            ZERO_ACADEMIC_UNIT_COURSE_CODES.has(normalizeCode(courseName))
+        );
+    }
+
+    // Returns both academic-load units and the value shown beside the course.
+    // Parenthesized display units identify courses excluded from academic load.
+    function getCourseUnitValues(courseName, category, rawUnits, fallbackUnits = 3) {
+        const parsedUnits = Number.parseFloat(
+            String(rawUnits ?? '').replace(/[^0-9.\-]/g, ''),
+        );
+        const listedUnits =
+            Number.isFinite(parsedUnits) && parsedUnits > 0
+                ? parsedUnits
+                : fallbackUnits;
+        const normalizedCode = normalizeCode(courseName);
+        const displayUnits =
+            normalizedCode === 'MATH20'
+                ? 4
+                : category === COURSE_CATEGORIES.NSTP
+                  ? 3
+                  : category === COURSE_CATEGORIES.PE
+                    ? 2
+                    : listedUnits;
+
+        return {
+            units: isZeroAcademicUnitCourse(courseName, category) ? 0 : listedUnits,
+            displayUnits,
+        };
+    }
+
     // Identifies the generic GE-elective checklist slot across its aliases.
     function isGeElectiveChecklistEntry(data) {
         return [
@@ -758,26 +829,18 @@
             category = COURSE_CATEGORIES.FREE_ELECTIVE;
         }
 
-        const parsedCredits = Number.parseFloat(
-            String(enlistedCourse?.creditText || '').replace(/[^0-9.\-]/g, ''),
+        const { units, displayUnits } = getCourseUnitValues(
+            normCode || course,
+            category,
+            enlistedCourse?.creditText,
         );
-        const units = NON_ACADEMIC_CATEGORIES.has(category)
-            ? 0
-            : Number.isFinite(parsedCredits) && parsedCredits > 0
-              ? parsedCredits
-              : 3;
 
         return {
             id: `__enlisted__${normCode}`,
             normCode,
             course,
             units,
-            displayUnits:
-                category === COURSE_CATEGORIES.NSTP
-                    ? 3
-                    : category === COURSE_CATEGORIES.PE
-                      ? 2
-                      : units,
+            displayUnits,
             category,
             nstpLevel:
                 category === COURSE_CATEGORIES.NSTP
@@ -992,6 +1055,9 @@
             parseCourseCodeFromClassDescription,
             parseRequirementList,
             parsePrerequisiteRules,
+            applyCurriculumSpecificRuleOverrides,
+            isZeroAcademicUnitCourse,
+            getCourseUnitValues,
             getPairedGeOption,
             getPairedGeFamily,
             getNstpLevel,
@@ -1797,8 +1863,14 @@
                 (category === 'NSTP' ||
                     /^(NSTP|CWTS|LTS|ROTC|MIL\s*SCI)\b/i.test(rawCourse));
 
-            // PE and NSTP are excluded from both academic-unit standing and GWA.
-            if (isPECourse || isNSTPCourse) return;
+            // PE, NSTP, and curriculum bridging courses such as Math 20 are
+            // excluded from both academic-unit standing and GWA.
+            if (
+                isPECourse ||
+                isNSTPCourse ||
+                isZeroAcademicUnitCourse(rawCourse, category)
+            )
+                return;
 
             const units = Number.parseFloat(String(data.units || '').replace(/[^0-9.\-]/g, ''));
             if (!Number.isFinite(units) || units <= 0) return;
@@ -1938,10 +2010,18 @@
                         item.semester && item.semester !== 'null' && item.semester !== '--'
                             ? item.semester
                             : '<span style="color: #888;">--</span>';
-                    const unitsDisplay =
-                        item.units && item.units !== 'null' && item.units !== ''
-                            ? item.units
-                            : '<span style="color: #888;">--</span>';
+                    const unitsDisplay = isZeroAcademicUnitCourse(
+                        item.rawName || item.curriculumSlot,
+                        item.category,
+                    )
+                        ? `(${getCourseUnitValues(
+                              item.rawName || item.curriculumSlot,
+                              item.category,
+                              item.units,
+                          ).displayUnits})`
+                        : item.units && item.units !== 'null' && item.units !== ''
+                          ? item.units
+                          : '<span style="color: #888;">--</span>';
 
                     const badgeBg = passed
                         ? '#d1e7dd'
@@ -2861,7 +2941,10 @@
             );
 
             // Parse and normalize every prerequisite-sheet rule once before evaluation.
-            const { rules, ruleByCode } = parsePrerequisiteRules(rulesRows);
+            const { rules, ruleByCode } = applyCurriculumSpecificRuleOverrides(
+                parsePrerequisiteRules(rulesRows),
+                checklistEntries,
+            );
 
             // Evaluate curriculum-specific paired-GE substitutions and GE-elective credit rules.
             const passedSoc1 = hasPassed('SOC SCI 1') || hasPassed('SOCSCI1');
@@ -3019,15 +3102,18 @@
                 const data =
                     checklistEntryByCode.get(normCode) ||
                     checklistEntryByCode.get(normalizeCode(displayTitle));
-                const parsedUnits = Number.parseFloat(
-                    String(data?.units || '').replace(/[^0-9.\-]/g, ''),
+                const category =
+                    data?.category ||
+                    getCourseCategory(data?.curriculumSlot || displayTitle);
+                const unitValues = getCourseUnitValues(
+                    normCode || displayTitle,
+                    category,
+                    data?.units,
                 );
 
                 return {
-                    units: Number.isFinite(parsedUnits) && parsedUnits > 0 ? parsedUnits : 3,
-                    category:
-                        data?.category ||
-                        getCourseCategory(data?.curriculumSlot || displayTitle),
+                    ...unitValues,
+                    category,
                     curriculumSlot: data?.curriculumSlot || displayTitle,
                 };
             };
@@ -3501,7 +3587,7 @@
                             ...item,
                             normCode,
                             units:
-                                Number.isFinite(Number(item.units)) && Number(item.units) > 0
+                                Number.isFinite(Number(item.units)) && Number(item.units) >= 0
                                     ? Number(item.units)
                                     : 3,
                             category:
@@ -3791,9 +3877,14 @@
                                 : item.fromCurrentGeList
                                   ? ' <span title="Listed by GEC for the current term" aria-label="Listed by GEC for the current term">✅</span>'
                                   : '';
-                        const units = Number.isInteger(item.units)
-                            ? item.units
-                            : item.units.toFixed(1);
+                        const units = isZeroAcademicUnitCourse(
+                            item.normCode || item.course,
+                            item.category,
+                        )
+                            ? `(${item.displayUnits})`
+                            : Number.isInteger(item.units)
+                              ? item.units
+                              : item.units.toFixed(1);
                         html += `<li style="margin-bottom:2px; font-size:11px;"><b>${escapeHTML(displayCourse)}</b>${availabilityIcon} — ${units} units <span style="color:#666;">(${escapeHTML(item.reason)})</span></li>`;
                     });
                     html += '</ul></div>';
@@ -4026,20 +4117,11 @@
                     // enlisted courses and substituted checklist labels (for
                     // example, CS 195 must retain its M-only restriction).
                     const resolvedRule = ruleByCode.get(normCode) || matchingRule;
-                    const parsedUnits = Number.parseFloat(
-                        String(data.units || '').replace(/[^0-9.\-]/g, ''),
+                    const { units, displayUnits } = getCourseUnitValues(
+                        normCode || course,
+                        category,
+                        data.units,
                     );
-                    const units = NON_ACADEMIC_CATEGORIES.has(category)
-                        ? 0
-                        : Number.isFinite(parsedUnits) && parsedUnits > 0
-                          ? parsedUnits
-                          : 3;
-                    const displayUnits =
-                        category === COURSE_CATEGORIES.NSTP
-                            ? 3
-                            : category === COURSE_CATEGORIES.PE
-                              ? 2
-                              : units;
                     const isRuleManagedCourse =
                         /^(?:CS|MATH|PHYSICS)\d/.test(normCode);
                     const isFlexibleNonAcademicRequirement =
@@ -4540,8 +4622,10 @@
                         <ol style="margin:3px 0 0 17px; padding:0;">`;
 
                     sortProgressionCourses(semester.courses).forEach((course) => {
-                        const isNonCredit =
-                            NON_ACADEMIC_CATEGORIES.has(course.category);
+                        const isNonCredit = isZeroAcademicUnitCourse(
+                            course.normCode || course.course,
+                            course.category,
+                        );
                         const unitLabel =
                             isNonCredit
                                 ? `(${course.displayUnits})`
