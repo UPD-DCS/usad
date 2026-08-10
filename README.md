@@ -5,7 +5,7 @@ The **Unified Student Advising and Degree-Progression Recommender Tool (USAD-CS)
 ## Requirements
 
 - A browser with [Violentmonkey](https://violentmonkey.github.io/) installed
-- Access to UP Diliman CRS Online Advising Module
+- Access to UP Diliman CRS Online Advising and Curriculum Checklist modules
 
 ## Install the loader
 
