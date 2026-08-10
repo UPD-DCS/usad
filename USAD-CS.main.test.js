@@ -28,6 +28,7 @@ const {
     ensureEnlistedMath20ChecklistEntry,
     isZeroAcademicUnitCourse,
     getCourseUnitValues,
+    getStandingRequirementStatus,
     getPairedGeOption,
     getPairedGeFamily,
     getNstpLevel,
@@ -162,6 +163,13 @@ assert.equal(math20UnitValues.displayUnits, 4);
 const math21UnitValues = getCourseUnitValues('Math 21', 'Core Courses', '4');
 assert.equal(math21UnitValues.units, 4);
 assert.equal(math21UnitValues.displayUnits, 4);
+
+assert.equal(getStandingRequirementStatus('SO_STANDING', 36), false);
+assert.equal(getStandingRequirementStatus('SO STANDING', 37), true);
+assert.equal(getStandingRequirementStatus('SOSTANDING', 38), true);
+assert.equal(getStandingRequirementStatus('JR_STANDING', 73), false);
+assert.equal(getStandingRequirementStatus('JR_STANDING', 74), true);
+assert.equal(getStandingRequirementStatus('CS 12', 148), null);
 
 assert.equal(getCourseCategory('PI 100'), 'Core Courses');
 assert.equal(getCourseCategory('NSTP 1'), 'NSTP');
