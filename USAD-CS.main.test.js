@@ -45,11 +45,13 @@ assert.equal(normalizeCode('STS'), 'STS1');
 assert.equal(formatCourseDisplayName('ENGG 150'), 'Engg 150');
 assert.equal(formatCourseDisplayName('SOC SCI 1/2'), 'Soc Sci 1/2');
 assert.equal(formatCourseDisplayName('ROTC MIL SCI 1'), 'ROTC Mil Sci 1');
+assert.equal(formatCourseDisplayName('MS 1'), 'MS 1');
 assert.equal(formatCourseDisplayName('Arts 1'), 'ARTS 1');
 assert.equal(formatCourseDisplayName('Kas 1'), 'KAS 1');
 assert.equal(formatCourseDisplayName('ARTS 1'), 'ARTS 1');
 
 assert.equal(cleanExtractedCourseTitle('ROTC Mil Sci 1 MAB'), 'ROTC Mil Sci 1');
+assert.equal(cleanExtractedCourseTitle('MS 1 THR'), 'MS 1');
 assert.equal(cleanExtractedCourseTitle('ART STUD 2 THR'), 'Art Stud 2');
 assert.equal(
     parseCourseCodeFromClassDescription('Soc Sci 1 THV\nFoundations of Social Science'),
@@ -77,6 +79,7 @@ assert.equal(parsedRules.ruleByCode.get('PHYSICS71').hasLab, true);
 
 assert.equal(getCourseCategory('PI 100'), 'Core Courses');
 assert.equal(getCourseCategory('NSTP 1'), 'NSTP');
+assert.equal(getCourseCategory('MS 1'), 'Core Courses');
 assert.equal(getCourseCategory('PE'), 'PE');
 assert.equal(getCourseCategory('CS Elective'), 'CS Electives');
 
@@ -86,6 +89,7 @@ assert.equal(getPairedGeFamily('GE 3: Soc Sci 1/Soc Sci 2'), 'SOCSCI');
 assert.equal(getPairedGeFamily('STS 1', 'DRMAPS'), 'STSDRMAPS');
 assert.equal(getNstpLevel('CWTS 2'), 2);
 assert.equal(getNstpLevel('ROTC Mil Sci 1'), 1);
+assert.equal(getNstpLevel('MS 1'), null);
 
 assert.equal(getProgressionMaximumUnits('1', [{ hasLab: false }]), 18);
 assert.equal(getProgressionMaximumUnits('2', [{ hasLab: true }]), 21);

@@ -104,6 +104,7 @@
         'GE',
         'LIS',
         'MBB',
+        'MS',
         'PE',
         'PI',
         'PS',
@@ -516,7 +517,7 @@
         const norm = normalizeCode(courseName);
 
         if (/^PI\s*100\b/i.test(norm)) return COURSE_CATEGORIES.CORE;
-        if (/^(NSTP|CWTS|LTS|ROTC|MS|MIL\s*SCI)/i.test(norm))
+        if (/^(NSTP|CWTS|LTS|ROTC|MIL\s*SCI)/i.test(norm))
             return COURSE_CATEGORIES.NSTP;
         if (/^PE\b/i.test(norm)) return COURSE_CATEGORIES.PE;
 
@@ -696,7 +697,7 @@
     function getNstpLevel(...courseCodes) {
         for (const courseCode of courseCodes) {
             const match = normalizeCode(courseCode).match(
-                /^(?:NSTP|CWTS|LTS|ROTC|ROTCMILSCI|MS|MILSCI)([12])/,
+                /^(?:NSTP|CWTS|LTS|ROTC|ROTCMILSCI|MILSCI)([12])/,
             );
             if (match) return Number(match[1]);
         }
@@ -865,14 +866,14 @@
 
         // 1. NSTP Track Format (CWTS 1/2, LTS 1/2, ROTC Mil Sci 1/2)
         const nstpMatch = cleaned.match(
-            /\b(NSTP|CWTS|LTS|ROTC\s*Mil\s*Sci|ROTC|Mil\s*Sci|MS)\s*([12])\b/i,
+            /\b(NSTP|CWTS|LTS|ROTC\s*Mil\s*Sci|ROTC|Mil\s*Sci)\s*([12])\b/i,
         );
         if (nstpMatch) {
             let track = nstpMatch[1].replace(/\s+/g, ' ').toUpperCase();
 
             if (track === 'NSTP') {
                 track = 'NSTP';
-            } else if (track.includes('ROTC') || track.includes('MIL') || track === 'MS') {
+            } else if (track.includes('ROTC') || track.includes('MIL')) {
                 track = 'ROTC Mil Sci';
             } else if (track.includes('CWTS')) {
                 track = 'CWTS';
@@ -1465,7 +1466,7 @@
                     const latestSem = latestAttempt.term || '--';
 
                     // Extract the NSTP component and track from the latest valid attempt.
-                    const isNstpRow = /^(NSTP|CWTS|LTS|ROTC|MS|MIL\s*SCI)\b/i.test(courseName);
+                    const isNstpRow = /^(NSTP|CWTS|LTS|ROTC|MIL\s*SCI)\b/i.test(courseName);
                     if (isNstpRow) {
                         nstpOccurrence++; // Track sequential NSTP entries (1st, 2nd, etc.)
 
@@ -1480,7 +1481,7 @@
                         }
 
                         let nstpMatch = textToSearch.match(
-                            /\b(CWTS|LTS|ROTC\s*Mil\s*Sci|ROTC|Mil\s*Sci|MS)\s*([12])\b/i,
+                            /\b(CWTS|LTS|ROTC\s*Mil\s*Sci|ROTC|Mil\s*Sci)\s*([12])\b/i,
                         );
 
                         if (!nstpMatch) {
@@ -1494,13 +1495,13 @@
                                 fullRowText += ' ' + row.nextElementSibling.innerText;
                             }
                             nstpMatch = fullRowText.match(
-                                /\b(CWTS|LTS|ROTC\s*Mil\s*Sci|ROTC|Mil\s*Sci|MS)\s*([12])\b/i,
+                                /\b(CWTS|LTS|ROTC\s*Mil\s*Sci|ROTC|Mil\s*Sci)\s*([12])\b/i,
                             );
                         }
 
                         if (nstpMatch) {
                             let track = nstpMatch[1].replace(/\s+/g, ' ').toUpperCase();
-                            if (track.includes('ROTC') || track.includes('MIL') || track === 'MS') {
+                            if (track.includes('ROTC') || track.includes('MIL')) {
                                 track = 'ROTC Mil Sci';
                             } else if (track.includes('CWTS')) {
                                 track = 'CWTS';
@@ -1794,7 +1795,7 @@
             const isNSTPCourse =
                 data.isNSTP ??
                 (category === 'NSTP' ||
-                    /^(NSTP|CWTS|LTS|ROTC|MS|MIL\s*SCI)\b/i.test(rawCourse));
+                    /^(NSTP|CWTS|LTS|ROTC|MIL\s*SCI)\b/i.test(rawCourse));
 
             // PE and NSTP are excluded from both academic-unit standing and GWA.
             if (isPECourse || isNSTPCourse) return;
@@ -3064,8 +3065,8 @@
                     const normCode = key.split('___')[0];
                     const match =
                         data.rawName.match(
-                            /^(CWTS|LTS|ROTC(?:\s*Mil\s*Sci)?|Mil\s*Sci|MS|NSTP)\s*([12])\b/i,
-                        ) || normCode.match(/^(cwts|lts|rotc|milsci|ms|nstp)[_\s]*([12])\b/i);
+                            /^(CWTS|LTS|ROTC(?:\s*Mil\s*Sci)?|Mil\s*Sci|NSTP)\s*([12])\b/i,
+                        ) || normCode.match(/^(cwts|lts|rotc|milsci|nstp)[_\s]*([12])\b/i);
                     if (
                         match &&
                         typeof isPassingGrade === 'function' &&
@@ -3094,11 +3095,11 @@
                     if (eligibleCodesSet.has(normCode)) return;
 
                     const isNstp1 =
-                        /^(nstp|cwts|lts|rotc|ms|milsci)1\b/i.test(normCode) ||
-                        /^(NSTP|CWTS|LTS|ROTC|MS|MIL\s*SCI)\s*1\b/i.test(data.rawName);
+                        /^(nstp|cwts|lts|rotc|milsci)1\b/i.test(normCode) ||
+                        /^(NSTP|CWTS|LTS|ROTC|MIL\s*SCI)\s*1\b/i.test(data.rawName);
                     const isNstp2 =
-                        /^(nstp|cwts|lts|rotc|ms|milsci)2\b/i.test(normCode) ||
-                        /^(NSTP|CWTS|LTS|ROTC|MS|MIL\s*SCI)\s*2\b/i.test(data.rawName);
+                        /^(nstp|cwts|lts|rotc|milsci)2\b/i.test(normCode) ||
+                        /^(NSTP|CWTS|LTS|ROTC|MIL\s*SCI)\s*2\b/i.test(data.rawName);
                     const isGe = isGeCourseCode(normCode) || isGeCourseCode(data.rawName);
 
                     const displayCourseName = data.rawName || normCode;
@@ -3289,16 +3290,16 @@
                 } = enlistedCourse;
 
                 const isPE = /^PE\b/i.test(baseCode);
-                const isGenericNSTP = /^(CWTS|ROTC|LTS|Mil\s*Sci|MS|NSTP)\b/i.test(baseCode);
+                const isGenericNSTP = /^(CWTS|ROTC|LTS|Mil\s*Sci|NSTP)\b/i.test(baseCode);
                 const isCSElective = /^CS\s*17[1-6]\b/i.test(baseCode);
                 const isGE = isGeCourseCode(baseCode) || isGeCourseCode(normBase);
 
                 const isNstp1 =
-                    /^(CWTS|LTS|ROTC(?:\s*Mil\s*Sci)?|Mil\s*Sci|MS|NSTP)\s*1\b/i.test(baseCode) ||
-                    /^(cwts|lts|rotc|milsci|ms|nstp)1$/i.test(normBase);
+                    /^(CWTS|LTS|ROTC(?:\s*Mil\s*Sci)?|Mil\s*Sci|NSTP)\s*1\b/i.test(baseCode) ||
+                    /^(cwts|lts|rotc|milsci|nstp)1$/i.test(normBase);
                 const isNstp2 =
-                    /^(CWTS|LTS|ROTC(?:\s*Mil\s*Sci)?|Mil\s*Sci|MS|NSTP)\s*2\b/i.test(baseCode) ||
-                    /^(cwts|lts|rotc|milsci|ms|nstp)2$/i.test(normBase);
+                    /^(CWTS|LTS|ROTC(?:\s*Mil\s*Sci)?|Mil\s*Sci|NSTP)\s*2\b/i.test(baseCode) ||
+                    /^(cwts|lts|rotc|milsci|nstp)2$/i.test(normBase);
 
                 if (isNstp2) {
                     enlistedNstp2Courses.push({
@@ -3485,7 +3486,7 @@
                         return (
                             !/^(cs|ge|free)\s*elective/i.test(name) &&
                             !/^cs\s*17[1-6]\b/i.test(name) &&
-                            !/^(nstp|cwts|lts|rotc|ms|milsci|pe)\b/i.test(name) &&
+                            !/^(nstp|cwts|lts|rotc|milsci|pe)\b/i.test(name) &&
                             ![
                                 COURSE_CATEGORIES.CS_ELECTIVE,
                                 COURSE_CATEGORIES.FREE_ELECTIVE,
@@ -3876,7 +3877,7 @@
                                 return /^PE\d/.test(code);
                             if (category === COURSE_CATEGORIES.NSTP)
                                 return (
-                                    /^(?:NSTP|CWTS|LTS|ROTC|ROTCMILSCI|MS|MILSCI)\d/.test(code) &&
+                                    /^(?:NSTP|CWTS|LTS|ROTC|ROTCMILSCI|MILSCI)\d/.test(code) &&
                                     (!requiredNstpLevel ||
                                         getNstpLevel(
                                             code,
@@ -3907,7 +3908,7 @@
                                 return (
                                     !ruleByCode.has(code) &&
                                     !isGeCourseCode(code) &&
-                                    !/^(?:PE|NSTP|CWTS|LTS|ROTC|ROTCMILSCI|MS|MILSCI)\d/.test(code)
+                                    !/^(?:PE|NSTP|CWTS|LTS|ROTC|ROTCMILSCI|MILSCI)\d/.test(code)
                                 );
                             return false;
                         },
@@ -4609,7 +4610,7 @@
                     const isElectivePlaceholder = /^(cs|ge|free)\s*elective/i.test(name);
                     const isCsElectiveCourse =
                         /^cs\s*17[1-6]\b/i.test(name) || /^cs17[1-6]\b/i.test(name);
-                    const isNstpCourse = /^(nstp|cwts|lts|rotc|ms|milsci)/i.test(name);
+                    const isNstpCourse = /^(nstp|cwts|lts|rotc|milsci)/i.test(name);
                     const isPeCourse = /^pe\b/i.test(name);
                     return (
                         !isElectivePlaceholder &&
