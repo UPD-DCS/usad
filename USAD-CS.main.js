@@ -116,6 +116,7 @@
         'STS',
     ]);
     const STANDING_UNIT_THRESHOLDS = Object.freeze({
+        SOSTANDING: 37,
         JRSTANDING: 74,
         SRSTANDING: 111,
     });
@@ -759,6 +760,16 @@
         };
     }
 
+    // Returns null when the requirement is not a standing rule; otherwise,
+    // evaluates it against completed academic units.
+    function getStandingRequirementStatus(requirement, academicUnits) {
+        const threshold = STANDING_UNIT_THRESHOLDS[normalizeCode(requirement)];
+        if (!threshold) return null;
+
+        const normalizedUnits = Number(academicUnits);
+        return Number.isFinite(normalizedUnits) && normalizedUnits >= threshold;
+    }
+
     // Identifies the generic GE-elective checklist slot across its aliases.
     function isGeElectiveChecklistEntry(data) {
         return [
@@ -1093,6 +1104,7 @@
             ensureEnlistedMath20ChecklistEntry,
             isZeroAcademicUnitCourse,
             getCourseUnitValues,
+            getStandingRequirementStatus,
             getPairedGeOption,
             getPairedGeFamily,
             getNstpLevel,
@@ -2972,8 +2984,11 @@
 
                 // Special standing prerequisites from the prerequisite rules sheet.
                 // Underscores and spaces normalize to the same values here.
-                const standingThreshold = STANDING_UNIT_THRESHOLDS[normalized];
-                if (standingThreshold) return passedAcademicUnits >= standingThreshold;
+                const standingStatus = getStandingRequirementStatus(
+                    normalized,
+                    passedAcademicUnits,
+                );
+                if (standingStatus !== null) return standingStatus;
 
                 return (
                     passedCodes.has(normalized) ||
@@ -4309,9 +4324,11 @@
 
                 const projectedHasPassed = (requirement) => {
                     const normalized = normalizeCode(requirement);
-                    const standingThreshold = STANDING_UNIT_THRESHOLDS[normalized];
-                    if (standingThreshold)
-                        return projectedAcademicUnits >= standingThreshold;
+                    const standingStatus = getStandingRequirementStatus(
+                        normalized,
+                        projectedAcademicUnits,
+                    );
+                    if (standingStatus !== null) return standingStatus;
                     return (
                         hasPassed(normalized) ||
                         projectedPassedCodes.has(normalized)
