@@ -29,6 +29,7 @@ const {
     isZeroAcademicUnitCourse,
     getCourseUnitValues,
     getStandingRequirementStatus,
+    getNstpPrerequisites,
     getPairedGeOption,
     getPairedGeFamily,
     getNstpLevel,
@@ -170,6 +171,12 @@ assert.equal(getStandingRequirementStatus('SOSTANDING', 38), true);
 assert.equal(getStandingRequirementStatus('JR_STANDING', 73), false);
 assert.equal(getStandingRequirementStatus('JR_STANDING', 74), true);
 assert.equal(getStandingRequirementStatus('CS 12', 148), null);
+assert.deepEqual(Array.from(getNstpPrerequisites(1)), ['SO_STANDING']);
+assert.deepEqual(
+    Array.from(getNstpPrerequisites(1, ['SO STANDING'])),
+    ['SO STANDING'],
+);
+assert.deepEqual(Array.from(getNstpPrerequisites(2)), []);
 
 assert.equal(getCourseCategory('PI 100'), 'Core Courses');
 assert.equal(getCourseCategory('NSTP 1'), 'NSTP');

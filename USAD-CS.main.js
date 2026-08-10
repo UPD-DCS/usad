@@ -120,6 +120,7 @@
         JRSTANDING: 74,
         SRSTANDING: 111,
     });
+    const NSTP_1_STANDING_REQUIREMENT = 'SO_STANDING';
     const TERM_CODES = Object.freeze({
         FIRST: '1',
         SECOND: '2',
@@ -770,6 +771,21 @@
         return Number.isFinite(normalizedUnits) && normalizedUnits >= threshold;
     }
 
+    function getNstpPrerequisites(nstpLevel, existingPrerequisites = []) {
+        const prerequisites = [...existingPrerequisites];
+        if (
+            nstpLevel === 1 &&
+            !prerequisites.some(
+                (requirement) =>
+                    normalizeCode(requirement) ===
+                    normalizeCode(NSTP_1_STANDING_REQUIREMENT),
+            )
+        ) {
+            prerequisites.push(NSTP_1_STANDING_REQUIREMENT);
+        }
+        return prerequisites;
+    }
+
     // Identifies the generic GE-elective checklist slot across its aliases.
     function isGeElectiveChecklistEntry(data) {
         return [
@@ -1105,6 +1121,7 @@
             isZeroAcademicUnitCourse,
             getCourseUnitValues,
             getStandingRequirementStatus,
+            getNstpPrerequisites,
             getPairedGeOption,
             getPairedGeFamily,
             getNstpLevel,
@@ -3254,7 +3271,11 @@
 
                     const displayCourseName = data.rawName || normCode;
 
-                    if (isNstp1 && !nstp1PassedEntry) {
+                    if (
+                        isNstp1 &&
+                        !nstp1PassedEntry &&
+                        hasPassed(NSTP_1_STANDING_REQUIREMENT)
+                    ) {
                         eligibleCoursesMap.set(normCode, {
                             course: displayCourseName,
                             concurrent: [],
@@ -3479,6 +3500,10 @@
                     if (nstp1PassedEntry || hasPassed(normBase)) {
                         isEligible = false;
                         reason = 'Course already passed';
+                    } else if (!hasPassed(NSTP_1_STANDING_REQUIREMENT)) {
+                        isEligible = false;
+                        reason =
+                            'Missing prerequisites: SO_STANDING (37 academic units)';
                     } else {
                         isEligible = true;
                     }
@@ -4201,9 +4226,14 @@
                             : category === COURSE_CATEGORIES.CS_ELECTIVE
                               ? ['1', '2']
                             : ['1', '2'];
-                    const prerequisites = [
-                        ...(resolvedRule?.prerequisites || []),
-                    ];
+                    const nstpLevel =
+                        category === COURSE_CATEGORIES.NSTP
+                            ? getNstpLevel(normCode, course)
+                            : null;
+                    const prerequisites = getNstpPrerequisites(
+                        nstpLevel,
+                        resolvedRule?.prerequisites || [],
+                    );
                     if (
                         category === COURSE_CATEGORIES.CS_ELECTIVE &&
                         !prerequisites.some(
@@ -4222,10 +4252,7 @@
                         category: isGeElectiveSlot
                             ? COURSE_CATEGORIES.GE_ELECTIVE
                             : category,
-                        nstpLevel:
-                            category === COURSE_CATEGORIES.NSTP
-                                ? getNstpLevel(normCode, course)
-                                : null,
+                        nstpLevel,
                         prerequisites,
                         corequisites: resolvedRule?.corequisites || [],
                         semesterOffered,
