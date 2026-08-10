@@ -110,7 +110,7 @@ const labLoadSummary = getProgressionLoadSummary(
     '2',
     15,
     [{ normCode: 'CS198', hasLab: true }],
-    [{ normCode: 'CS199', units: 3, hasLab: false }],
+    [{ normCode: 'CS199', units: 3, hasLab: true }],
 );
 assert.equal(labLoadSummary.totalUnits, 18);
 assert.equal(labLoadSummary.maximumUnits, 21);
