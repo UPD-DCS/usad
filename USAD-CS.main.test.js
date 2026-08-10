@@ -24,6 +24,9 @@ const {
     parseCourseCodeFromClassDescription,
     parseRequirementList,
     parsePrerequisiteRules,
+    applyCurriculumSpecificRuleOverrides,
+    isZeroAcademicUnitCourse,
+    getCourseUnitValues,
     getPairedGeOption,
     getPairedGeFamily,
     getNstpLevel,
@@ -76,6 +79,45 @@ assert.deepEqual(
     ['1', '2', 'M'],
 );
 assert.equal(parsedRules.ruleByCode.get('PHYSICS71').hasLab, true);
+
+const curriculumRulesWithMath20 = applyCurriculumSpecificRuleOverrides(
+    parsePrerequisiteRules([
+        ['Course', 'Prerequisite', 'Corequisite', 'Semester', 'Lab'],
+        ['Math 21', '', '', '1,2,M', '0'],
+    ]),
+    [
+        {
+            rawName: 'Math 20',
+            curriculumSlot: 'Math 20',
+            completedCourse: 'Math 20',
+        },
+    ],
+);
+assert.ok(curriculumRulesWithMath20.ruleByCode.has('MATH20'));
+assert.deepEqual(
+    Array.from(curriculumRulesWithMath20.ruleByCode.get('MATH21').prerequisites),
+    ['Math 20'],
+);
+
+const curriculumRulesWithoutMath20 = applyCurriculumSpecificRuleOverrides(
+    parsePrerequisiteRules([
+        ['Course', 'Prerequisite', 'Corequisite', 'Semester', 'Lab'],
+        ['Math 21', '', '', '1,2,M', '0'],
+    ]),
+    [{ rawName: 'Math 21', curriculumSlot: 'Math 21' }],
+);
+assert.deepEqual(
+    Array.from(curriculumRulesWithoutMath20.ruleByCode.get('MATH21').prerequisites),
+    [],
+);
+
+assert.equal(isZeroAcademicUnitCourse('Math 20', 'Core Courses'), true);
+const math20UnitValues = getCourseUnitValues('Math 20', 'Core Courses', '4');
+assert.equal(math20UnitValues.units, 0);
+assert.equal(math20UnitValues.displayUnits, 4);
+const math21UnitValues = getCourseUnitValues('Math 21', 'Core Courses', '4');
+assert.equal(math21UnitValues.units, 4);
+assert.equal(math21UnitValues.displayUnits, 4);
 
 assert.equal(getCourseCategory('PI 100'), 'Core Courses');
 assert.equal(getCourseCategory('NSTP 1'), 'NSTP');
@@ -149,6 +191,24 @@ const enlistedPeCandidate = buildEnlistedProgressionCandidate({
 assert.equal(enlistedPeCandidate.units, 0);
 assert.equal(enlistedPeCandidate.displayUnits, 2);
 assert.equal(enlistedPeCandidate.category, 'PE');
+
+const enlistedMath20Candidate = buildEnlistedProgressionCandidate(
+    {
+        normalizedCode: 'MATH20',
+        baseCode: 'Math 20',
+        creditText: '4.0',
+        scheduleText: 'MWF 8-9AM',
+    },
+    {
+        prerequisites: [],
+        corequisites: [],
+        semesterOffered: ['1', '2', 'M'],
+        hasLab: false,
+    },
+);
+assert.equal(enlistedMath20Candidate.units, 0);
+assert.equal(enlistedMath20Candidate.displayUnits, 4);
+assert.equal(enlistedMath20Candidate.category, 'Core Courses');
 
 assert.deepEqual(
     Array.from(
