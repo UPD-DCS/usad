@@ -6,6 +6,7 @@ const path = require('path');
 const PORT = Number(process.env.USAD_E2E_PORT || 43123);
 const CHECKLIST_PATH = process.env.USAD_E2E_CHECKLIST;
 const PRE_REFACTOR_COMMIT = process.env.USAD_E2E_BASE_COMMIT || '7343cef';
+const VSO_SPREADSHEET_ID = '1yYECEDmllyGMuL1c3lzmvuR00lWtedS1x6Kweronpp0';
 
 if (!CHECKLIST_PATH) {
     throw new Error(
@@ -150,9 +151,24 @@ function buildFixturePage(version) {
             };
 
             window.__USAD_E2E_REQUESTS__ = [];
+            const fixtureStudentId =
+                (document.querySelector('td.tr_submit h1')?.textContent || '')
+                    .replace(/\D/g, '');
             window.GM_xmlhttpRequest = (options) => {
                 window.__USAD_E2E_REQUESTS__.push(String(options.url || ''));
                 const respond = (response) => setTimeout(() => options.onload?.(response), 0);
+                if (String(options.url).includes(${JSON.stringify(VSO_SPREADSHEET_ID)})) {
+                    const listedStudentId =
+                        scenario === 'vso' ? fixtureStudentId : '999999999';
+                    respond({
+                        status: 200,
+                        responseText:
+                            ',,,\\nUpdated,8/12/2026 20:26:00,,\\n,,,\\n' +
+                            'Student number,Last Name,First Name,Middle Name\\n' +
+                            listedStudentId + ',Test,VSO,Student',
+                    });
+                    return;
+                }
                 if (String(options.url).includes('/schedule/')) {
                     if (/\\/schedule\\/?$/.test(String(options.url))) {
                         respond({

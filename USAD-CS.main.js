@@ -9,10 +9,17 @@
     // -------------------------------------------------------------------------
     const PREREQ_SPREADSHEET_ID = '1LrlNoZjLS5N4LstDTwCp6774vAENwCcFHeAfBZ2S_rs';
     const PREREQ_CSV_URL = `https://docs.google.com/spreadsheets/d/${PREREQ_SPREADSHEET_ID}/export?format=csv&gid=0`;
+    const VSO_SPREADSHEET_ID = '1yYECEDmllyGMuL1c3lzmvuR00lWtedS1x6Kweronpp0';
+    const VSO_CSV_URL = `https://docs.google.com/spreadsheets/d/${VSO_SPREADSHEET_ID}/export?format=csv&gid=0`;
 
-    const PREREQ_CACHE_KEY = 'crs_prereq_sheet_data';
-    const PREREQ_CACHE_TIME_KEY = 'crs_prereq_sheet_time';
+    const CURRICULUM_RULES_CACHE_KEY = 'usad_curriculum_rules_csv_v1';
+    const CURRICULUM_RULES_CACHE_TIME_KEY = 'usad_curriculum_rules_csv_time_v1';
+    const LEGACY_PREREQ_CACHE_KEY = 'crs_prereq_sheet_data';
+    const LEGACY_PREREQ_CACHE_TIME_KEY = 'crs_prereq_sheet_time';
+    const VSO_CACHE_KEY = 'usad_vso_students_csv_v1';
+    const VSO_CACHE_TIME_KEY = 'usad_vso_students_csv_time_v1';
     const CACHE_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+    const VSO_CACHE_EXPIRY_MS = 5 * 60 * 1000;
     const CHECKLIST_SESSION_CACHE_PREFIX = 'usad_checklist_html_v1_';
     const CHECKLIST_SESSION_CACHE_INDEX_KEY = 'usad_checklist_html_v1_index';
     const CHECKLIST_SESSION_CACHE_EXPIRY_MS = 5 * 60 * 1000;
@@ -163,6 +170,9 @@
     // prerequisite evaluation waits until the GE lookup is ready.
     let geCourseListReadyPromise = Promise.resolve([]);
     let prereqRulesReadyPromise = Promise.resolve(null);
+    let vsoStatusReadyPromise = Promise.resolve(false);
+    let vsoStatusResolved = false;
+    let isVsoStudent = false;
     let checklistRecommendationDataReady = false;
     let latestPrereqRulesRows = null;
     let recommendationEvaluationVersion = 0;
@@ -786,6 +796,49 @@
         return prerequisites;
     }
 
+    function normalizeStudentNumber(value) {
+        return String(value || '').replace(/\D/g, '');
+    }
+
+    // Reads the Student number column even when the sheet has notes or update
+    // timestamps above the actual table header.
+    function parseVsoStudentNumbers(rows) {
+        if (!Array.isArray(rows)) return new Set();
+
+        const headerRowIndex = rows.findIndex((row) =>
+            row.some(
+                (cell) =>
+                    String(cell || '')
+                        .replace(/[^a-z]/gi, '')
+                        .toLowerCase() === 'studentnumber',
+            ),
+        );
+        if (headerRowIndex < 0) return new Set();
+
+        const headerRow = rows[headerRowIndex];
+        const studentNumberColumn = headerRow.findIndex(
+            (cell) =>
+                String(cell || '')
+                    .replace(/[^a-z]/gi, '')
+                    .toLowerCase() === 'studentnumber',
+        );
+
+        return new Set(
+            rows
+                .slice(headerRowIndex + 1)
+                .map((row) => normalizeStudentNumber(row?.[studentNumberColumn]))
+                .filter((studentNumber) => /^\d{9}$/.test(studentNumber)),
+        );
+    }
+
+    function isStudentInVsoRows(studentNumber, rows) {
+        const normalizedStudentNumber = normalizeStudentNumber(studentNumber);
+        return (
+            /^\d{9}$/.test(normalizedStudentNumber) &&
+            parseVsoStudentNumbers(rows).has(normalizedStudentNumber)
+        );
+    }
+
     // Identifies the generic GE-elective checklist slot across its aliases.
     function isGeElectiveChecklistEntry(data) {
         return [
@@ -1122,6 +1175,9 @@
             getCourseUnitValues,
             getStandingRequirementStatus,
             getNstpPrerequisites,
+            normalizeStudentNumber,
+            parseVsoStudentNumbers,
+            isStudentInVsoRows,
             getPairedGeOption,
             getPairedGeFamily,
             getNstpLevel,
@@ -1171,6 +1227,7 @@
         <div id="info-id" style="font-size: 13px; margin-bottom: 10px;"><b>Student ID:</b> ${escapeHTML(studentId || 'N/A')}</div>
 
         <div id="unit-status"></div>
+        <div id="vso-status"></div>
         <div id="matcher-status" style="margin-top: 5px;"></div>
 
         <div id="recommendations-requirements-layout" style="display: flex; align-items: stretch; gap: 6px; margin-top: 5px;">
@@ -1226,8 +1283,12 @@
     // GE course list. Clearing the cached GE source also makes the script
     // revisit the GEC webpage and verify the currently linked GE-list PDF.
     document.getElementById('btn-refresh-sheet').onclick = () => {
-        localStorage.removeItem(PREREQ_CACHE_KEY);
-        localStorage.removeItem(PREREQ_CACHE_TIME_KEY);
+        localStorage.removeItem(CURRICULUM_RULES_CACHE_KEY);
+        localStorage.removeItem(CURRICULUM_RULES_CACHE_TIME_KEY);
+        localStorage.removeItem(LEGACY_PREREQ_CACHE_KEY);
+        localStorage.removeItem(LEGACY_PREREQ_CACHE_TIME_KEY);
+        localStorage.removeItem(VSO_CACHE_KEY);
+        localStorage.removeItem(VSO_CACHE_TIME_KEY);
         localStorage.removeItem(GE_LIST_CACHE_KEY);
         localStorage.removeItem(GE_LIST_CACHE_TIME_KEY);
         localStorage.removeItem(GE_LIST_CACHE_SOURCE_KEY);
@@ -1322,6 +1383,21 @@
         setProgressionHidden(isProgressionHidden);
     };
 
+    function applyVsoAdvisingRestrictions() {
+        const vsoStatusDiv = document.getElementById('vso-status');
+        if (vsoStatusDiv) {
+            vsoStatusDiv.innerHTML = `<div style="color:#842029; background-color:#f8d7da; border:1px solid #f5c2c7; padding:5px 6px; border-radius:4px; margin-top:5px; font-size:13px; font-weight:bold;">Do not advise (VSO student)</div>`;
+        }
+
+        [
+            document.getElementById('matcher-status'),
+            document.getElementById('recommendations-requirements-layout'),
+            document.getElementById('progression-recommender-box'),
+        ].forEach((element) => {
+            if (element) element.style.display = 'none';
+        });
+    }
+
     initializeAdvisingAssistant();
 
     // Loads the current GE course list, reports initialization status, and then fetches the student checklist.
@@ -1332,6 +1408,22 @@
             statusDiv.style.color = '#666';
             statusDiv.innerText = 'Loading checklist and current GEC course list...';
         }
+
+        // Check the VSO roster in parallel with the checklist and supporting
+        // data. A positive match suppresses every advising computation while
+        // retaining the checklist-only view.
+        vsoStatusReadyPromise = loadVsoStudentStatus(studentId)
+            .then((isListed) => {
+                isVsoStudent = isListed;
+                vsoStatusResolved = true;
+                if (isListed) applyVsoAdvisingRestrictions();
+                return isListed;
+            })
+            .catch((error) => {
+                vsoStatusResolved = true;
+                console.error('[USAD-CS] VSO roster loading failed:', error);
+                return false;
+            });
 
         // Start both network workflows immediately. The checklist can be
         // downloaded and parsed while the GE source is checked in parallel.
@@ -1358,6 +1450,7 @@
         await Promise.allSettled([
             geCourseListReadyPromise,
             prereqRulesReadyPromise,
+            vsoStatusReadyPromise,
             checklistPromise,
         ]);
     }
@@ -1719,10 +1812,12 @@
                     // The independent GE and prerequisite-rule workflows began
                     // with checklist loading. Wait only for their bounded/cache
                     // results before evaluating the parsed checklist.
-                    const [, rulesRows] = await Promise.all([
+                    const [, rulesRows, isListedAsVso] = await Promise.all([
                         geCourseListReadyPromise,
                         prereqRulesReadyPromise,
+                        vsoStatusReadyPromise,
                     ]);
+                    if (isListedAsVso) return;
                     const effectiveRulesRows = latestPrereqRulesRows || rulesRows;
                     if (effectiveRulesRows) {
                         latestPrereqRulesRows = effectiveRulesRows;
@@ -2264,6 +2359,74 @@
             arr[row][col] += cc;
         }
         return arr;
+    }
+
+    // Loads the public VSO roster with a short cache because the sheet is
+    // continuously updated. A stale cache remains a fallback during a
+    // temporary network failure so a known VSO student is not advised.
+    function loadVsoStudentStatus(studentNumber) {
+        const cachedCsv = localStorage.getItem(VSO_CACHE_KEY);
+        const cachedAt = Number(localStorage.getItem(VSO_CACHE_TIME_KEY) || 0);
+        const cachedRows = cachedCsv ? parseCSV(cachedCsv) : [];
+        const cachedStudentNumbers = parseVsoStudentNumbers(cachedRows);
+        const cacheIsFresh =
+            cachedCsv && Date.now() - cachedAt < VSO_CACHE_EXPIRY_MS;
+
+        if (cacheIsFresh) {
+            return Promise.resolve(
+                cachedStudentNumbers.has(normalizeStudentNumber(studentNumber)),
+            );
+        }
+
+        return new Promise((resolve, reject) => {
+            GM_xmlhttpRequest({
+                method: 'GET',
+                url: VSO_CSV_URL,
+                timeout: 10000,
+                onload(response) {
+                    if (response.status < 200 || response.status >= 300) {
+                        reject(
+                            new Error(`VSO roster returned HTTP ${response.status}.`),
+                        );
+                        return;
+                    }
+                    if (isHTMLResponse(response.responseText)) {
+                        reject(new Error('VSO roster access was denied.'));
+                        return;
+                    }
+
+                    const rows = parseCSV(response.responseText || '');
+                    const studentNumbers = parseVsoStudentNumbers(rows);
+                    if (!studentNumbers.size) {
+                        reject(new Error('VSO roster has no valid student numbers.'));
+                        return;
+                    }
+
+                    localStorage.setItem(VSO_CACHE_KEY, response.responseText);
+                    localStorage.setItem(VSO_CACHE_TIME_KEY, Date.now().toString());
+                    resolve(
+                        studentNumbers.has(normalizeStudentNumber(studentNumber)),
+                    );
+                },
+                ontimeout() {
+                    reject(new Error('VSO roster request timed out.'));
+                },
+                onerror() {
+                    reject(new Error('Unable to connect to the VSO roster.'));
+                },
+            });
+        }).catch((error) => {
+            if (cachedStudentNumbers.size) {
+                console.warn(
+                    '[USAD-CS] VSO roster refresh failed; using stale cache:',
+                    error,
+                );
+                return cachedStudentNumbers.has(
+                    normalizeStudentNumber(studentNumber),
+                );
+            }
+            throw error;
+        });
     }
 
     // Parses the authoritative fourth-column offering codes. Accept common
@@ -2877,17 +3040,38 @@
     // -------------------------------------------------------------------------
     // 9. Prerequisite, requirement, and enlistment evaluation
     // -------------------------------------------------------------------------
-    // Returns cached or bundled prerequisite rules immediately, then refreshes
-    // expired data from Google Sheets without blocking recommendation rendering.
+    // Returns the complete cached curriculum-rules CSV (all rows and columns)
+    // immediately, then refreshes expired data from Google Sheets without
+    // blocking recommendation rendering. A valid stale cache remains preferable
+    // to the smaller bundled fallback when the sheet is temporarily unavailable.
     function loadPrereqRules() {
         const msgDiv = document.getElementById('prereq-status-msg');
         msgDiv.innerText = 'Evaluating course prerequisites...';
 
-        const cachedRules = localStorage.getItem(PREREQ_CACHE_KEY);
-        const cachedRulesTime = localStorage.getItem(PREREQ_CACHE_TIME_KEY);
+        const cachedRules =
+            localStorage.getItem(CURRICULUM_RULES_CACHE_KEY) ||
+            localStorage.getItem(LEGACY_PREREQ_CACHE_KEY);
+        const cachedRulesTime =
+            localStorage.getItem(CURRICULUM_RULES_CACHE_TIME_KEY) ||
+            localStorage.getItem(LEGACY_PREREQ_CACHE_TIME_KEY);
         const cachedRulesRows = cachedRules ? parseCSV(cachedRules) : null;
         const cachedRulesAreValid = hasProgressionMetadataColumns(cachedRulesRows);
         const initialRulesRows = getImmediatePrereqRules(cachedRulesRows);
+
+        // Transparently migrate the previous prerequisite-only cache name. Its
+        // stored value was already the complete exported curriculum-rules CSV.
+        if (
+            cachedRulesAreValid &&
+            !localStorage.getItem(CURRICULUM_RULES_CACHE_KEY)
+        ) {
+            localStorage.setItem(CURRICULUM_RULES_CACHE_KEY, cachedRules);
+            if (cachedRulesTime) {
+                localStorage.setItem(
+                    CURRICULUM_RULES_CACHE_TIME_KEY,
+                    cachedRulesTime,
+                );
+            }
+        }
 
         if (
             cachedRulesAreValid &&
@@ -2919,8 +3103,14 @@
                             return;
                         }
 
-                        localStorage.setItem(PREREQ_CACHE_KEY, res.responseText);
-                        localStorage.setItem(PREREQ_CACHE_TIME_KEY, Date.now().toString());
+                        localStorage.setItem(
+                            CURRICULUM_RULES_CACHE_KEY,
+                            res.responseText,
+                        );
+                        localStorage.setItem(
+                            CURRICULUM_RULES_CACHE_TIME_KEY,
+                            Date.now().toString(),
+                        );
                         resolve(freshRulesRows);
                     } else {
                         reject(
@@ -2942,7 +3132,12 @@
                 const rulesChanged =
                     JSON.stringify(freshRulesRows) !== JSON.stringify(initialRulesRows);
                 latestPrereqRulesRows = freshRulesRows;
-                if (rulesChanged && checklistRecommendationDataReady) {
+                if (
+                    rulesChanged &&
+                    checklistRecommendationDataReady &&
+                    vsoStatusResolved &&
+                    !isVsoStudent
+                ) {
                     evaluatePrereqAndEnlisted(freshRulesRows);
                 }
                 return freshRulesRows;
@@ -2962,6 +3157,8 @@
 
     // Evaluates prerequisites, corequisites, completed courses, enlistments, recommendations, and requirement summaries.
     function evaluatePrereqAndEnlisted(rulesRows) {
+        if (!vsoStatusResolved || isVsoStudent) return;
+
         const msgDiv = document.getElementById('prereq-status-msg');
         const evaluationVersion = ++recommendationEvaluationVersion;
 

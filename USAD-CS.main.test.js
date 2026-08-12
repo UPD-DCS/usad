@@ -30,6 +30,9 @@ const {
     getCourseUnitValues,
     getStandingRequirementStatus,
     getNstpPrerequisites,
+    normalizeStudentNumber,
+    parseVsoStudentNumbers,
+    isStudentInVsoRows,
     getPairedGeOption,
     getPairedGeFamily,
     getNstpLevel,
@@ -177,6 +180,23 @@ assert.deepEqual(
     ['SO STANDING'],
 );
 assert.deepEqual(Array.from(getNstpPrerequisites(2)), []);
+
+const vsoRows = [
+    ['', '', '', ''],
+    ['Updated', '8/12/2026 20:26:00', '', ''],
+    ['', '', '', ''],
+    ['Student number', 'Last Name', 'First Name', 'Middle Name'],
+    ['2022-07908', 'Gonzalo', 'Johanne', 'Pilapil'],
+    ['202303243', 'Ladines', 'Ella Katrina', 'Abanes'],
+];
+assert.equal(normalizeStudentNumber('2022-07908'), '202207908');
+assert.deepEqual(
+    Array.from(parseVsoStudentNumbers(vsoRows)),
+    ['202207908', '202303243'],
+);
+assert.equal(isStudentInVsoRows('2022-07908', vsoRows), true);
+assert.equal(isStudentInVsoRows('202499999', vsoRows), false);
+assert.equal(parseVsoStudentNumbers([['Updated', '8/12/2026']]).size, 0);
 
 assert.equal(getCourseCategory('PI 100'), 'Core Courses');
 assert.equal(getCourseCategory('NSTP 1'), 'NSTP');
