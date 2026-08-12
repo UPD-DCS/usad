@@ -395,6 +395,9 @@ assert.ok(source.includes('const RECOMMENDATION_RENDER_TARGET_MS = 2000;'));
 assert.ok(source.includes('listDiv.dataset.initialRenderMs = String(elapsedMs);'));
 assert.ok(!source.includes('GE_LIST_INITIAL_WAIT_MS'));
 assert.ok(!source.includes('function loadPrereqRulesAndEvaluate()'));
+assert.ok(source.includes('🚫 <strong>Do not advise!</strong> (VSO student)'));
+assert.ok(source.includes("document.getElementById('unit-status'),"));
+assert.ok(!source.includes('>Do not advise (VSO student)</div>'));
 
 const bundledRules = getImmediatePrereqRules(null);
 assert.ok(bundledRules.length >= 40);

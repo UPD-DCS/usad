@@ -1386,10 +1386,11 @@
     function applyVsoAdvisingRestrictions() {
         const vsoStatusDiv = document.getElementById('vso-status');
         if (vsoStatusDiv) {
-            vsoStatusDiv.innerHTML = `<div style="color:#842029; background-color:#f8d7da; border:1px solid #f5c2c7; padding:5px 6px; border-radius:4px; margin-top:5px; font-size:13px; font-weight:bold;">Do not advise (VSO student)</div>`;
+            vsoStatusDiv.innerHTML = `<div style="color:#842029; background-color:#f8d7da; border:1px solid #f5c2c7; padding:5px 6px; border-radius:4px; margin-top:5px; font-size:13px;">🚫 <strong>Do not advise!</strong> (VSO student)</div>`;
         }
 
         [
+            document.getElementById('unit-status'),
             document.getElementById('matcher-status'),
             document.getElementById('recommendations-requirements-layout'),
             document.getElementById('progression-recommender-box'),
