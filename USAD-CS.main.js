@@ -801,8 +801,11 @@
         const parsedUnits = Number.parseFloat(
             String(rawUnits ?? '').replace(/[^0-9.\-]/g, ''),
         );
+        // CRS uses explicit 0.0-credit rows for integrated lab components.
+        // Preserve those zeroes; use the fallback only when units are absent
+        // or cannot be parsed.
         const listedUnits =
-            Number.isFinite(parsedUnits) && parsedUnits > 0
+            Number.isFinite(parsedUnits) && parsedUnits >= 0
                 ? parsedUnits
                 : fallbackUnits;
         const normalizedCode = normalizeCode(courseName);
