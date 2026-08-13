@@ -324,6 +324,25 @@ const satisfiedFoundationLoad = getFoundationLoadRuleStatus(
 assert.equal(satisfiedFoundationLoad.foundationUnits, 12);
 assert.equal(satisfiedFoundationLoad.satisfied, true);
 
+const zeroCreditIntegratedComponent = getCourseUnitValues(
+    'CS 32',
+    'Core Courses',
+    '0.0',
+);
+assert.equal(zeroCreditIntegratedComponent.units, 0);
+assert.equal(zeroCreditIntegratedComponent.displayUnits, 0);
+const integratedFoundationLoad = getFoundationLoadRuleStatus(
+    13,
+    [
+        { normalizedCode: 'CS32', creditText: '0.0' },
+        { normalizedCode: 'CS32', creditText: '4.0' },
+        { normalizedCode: 'ENG30', creditText: '3.0' },
+    ],
+    () => false,
+);
+assert.equal(integratedFoundationLoad.foundationUnits, 4);
+assert.equal(integratedFoundationLoad.satisfied, false);
+
 const advancedFoundationLoad = getFoundationLoadRuleStatus(
     18,
     [
