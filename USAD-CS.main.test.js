@@ -351,6 +351,24 @@ const nonzeroLectureLabUnits = getEnlistedCourseUnitsByCode([
 ]);
 assert.equal(nonzeroLectureLabUnits.get('CS33'), 4);
 assert.equal(nonzeroLectureLabUnits.get('CS140'), 4);
+[
+    ['0+3', '0.0', '3.0', 3],
+    ['3+0', '3.0', '0.0', 3],
+    ['2+1', '2.0', '1.0', 3],
+    ['1+2', '1.0', '2.0', 3],
+    ['4+0', '4.0', '0.0', 4],
+    ['1+3', '1.0', '3.0', 4],
+].forEach(([label, firstComponent, secondComponent, expectedUnits]) => {
+    const componentUnits = getEnlistedCourseUnitsByCode([
+        { normalizedCode: 'CS33', creditText: firstComponent },
+        { normalizedCode: 'CS33', creditText: secondComponent },
+    ]);
+    assert.equal(
+        componentUnits.get('CS33'),
+        expectedUnits,
+        `${label} lecture/lab components should be added`,
+    );
+});
 const nonzeroIntegratedFoundationLoad = getFoundationLoadRuleStatus(
     15,
     [
