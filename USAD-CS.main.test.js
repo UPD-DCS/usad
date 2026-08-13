@@ -448,8 +448,16 @@ assert.ok(
 );
 assert.ok(
     source.includes(
-        "if (listedAsVso) {\n            await silentFetchChecklist(studentId);\n            return;",
+        "if (listedAsVso) {\n            await silentFetchChecklist(studentId, liveChecklistPromise);\n            return;",
     ),
+);
+assert.ok(
+    source.indexOf('const liveChecklistPromise = fetchChecklistHtml(studentId);') <
+        source.indexOf('const listedAsVso = await vsoStatusReadyPromise;'),
+);
+assert.ok(
+    source.indexOf('// 9.10 Group, render, and verify course recommendations.') <
+        source.lastIndexOf('initializeAdvisingAssistant();'),
 );
 assert.ok(source.includes('if (!isVsoStudent) {'));
 
@@ -557,6 +565,12 @@ assert.ok(source.includes('const CRS_SCHEDULE_CACHE_EXPIRY_MS = 15 * 60 * 1000;'
 assert.ok(source.includes('const CHECKLIST_SESSION_CACHE_EXPIRY_MS = 5 * 60 * 1000;'));
 assert.ok(source.includes('const RECOMMENDATION_RENDER_TARGET_MS = 2000;'));
 assert.ok(source.includes('listDiv.dataset.initialRenderMs = String(elapsedMs);'));
+assert.ok(source.includes('let pendingProgressionRender = null;'));
+assert.ok(source.includes('if (!isProgressionHidden && pendingProgressionRender)'));
+assert.ok(source.includes("typeof globalThis.requestIdleCallback === 'function'"));
+assert.ok(source.includes('scheduleDeferredWork(() => {'));
+assert.ok(source.includes('const crsScheduleRowTextsByDocument = new WeakMap();'));
+assert.ok(source.includes('scheduleCrsSchedulePersistentCacheSave();'));
 assert.ok(!source.includes('GE_LIST_INITIAL_WAIT_MS'));
 assert.ok(!source.includes('function loadPrereqRulesAndEvaluate()'));
 assert.ok(source.includes('🚫 <strong>Do not advise!</strong> (VSO student)'));
