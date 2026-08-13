@@ -205,6 +205,7 @@
     let checklistRecommendationDataReady = false;
     let latestPrereqRulesRows = null;
     let recommendationEvaluationVersion = 0;
+    let pendingProgressionRender = null;
     const recommendationLoadStartedAt =
         typeof performance !== 'undefined' && typeof performance.now === 'function'
             ? performance.now()
@@ -392,6 +393,16 @@
 
     function hasReachedPassedAttemptLimit(courseCode, passedAttemptCount) {
         return Number(passedAttemptCount || 0) >= getPassedAttemptLimit(courseCode);
+    }
+
+    // Let the browser paint primary advising results before starting secondary,
+    // CPU-heavy work. The timeout fallback keeps behavior consistent where the
+    // idle-callback API is unavailable.
+    function scheduleDeferredWork(callback) {
+        if (typeof globalThis.requestIdleCallback === 'function') {
+            return globalThis.requestIdleCallback(callback, { timeout: 250 });
+        }
+        return setTimeout(callback, 0);
     }
 
     function recordPassedCourseAttempt(courseCode) {
@@ -1539,6 +1550,11 @@
     toggleProgressionBtn.onclick = () => {
         isProgressionHidden = !isProgressionHidden;
         setProgressionHidden(isProgressionHidden);
+        if (!isProgressionHidden && pendingProgressionRender) {
+            const renderProgression = pendingProgressionRender;
+            pendingProgressionRender = null;
+            renderProgression();
+        }
     };
 
     function applyVsoAdvisingRestrictions() {
@@ -1558,9 +1574,7 @@
         });
     }
 
-    initializeAdvisingAssistant();
-
-    // Loads the current GE course list, reports initialization status, and then fetches the student checklist.
+    // Loads the current GE course list, reports initialization status, and then processes the student checklist.
     async function initializeAdvisingAssistant() {
         const statusDiv = document.getElementById('sil-status');
 
@@ -1568,6 +1582,12 @@
             statusDiv.style.color = '#666';
             statusDiv.innerText = 'Checking VSO status...';
         }
+
+        // The checklist is required for every student, including VSO students,
+        // so start that request immediately while the independent VSO lookup runs.
+        // Processing still waits for VSO resolution to preserve the do-not-advise rule.
+        const liveChecklistPromise = fetchChecklistHtml(studentId);
+        void liveChecklistPromise.catch(() => {});
 
         // Resolve VSO status before inspecting current enlistments or starting
         // any recommendation-support workflow. Listed students need only the
@@ -1587,7 +1607,7 @@
         const listedAsVso = await vsoStatusReadyPromise;
 
         if (listedAsVso) {
-            await silentFetchChecklist(studentId);
+            await silentFetchChecklist(studentId, liveChecklistPromise);
             return;
         }
 
@@ -1615,7 +1635,7 @@
             console.error('[USAD-CS] Prerequisite rules loading failed:', error);
             return null;
         });
-        const checklistPromise = silentFetchChecklist(studentId);
+        const checklistPromise = silentFetchChecklist(studentId, liveChecklistPromise);
         await Promise.allSettled([
             geCourseListReadyPromise,
             prereqRulesReadyPromise,
@@ -1750,7 +1770,18 @@
     }
 
     // Downloads, parses, and indexes the authoritative CRS curriculum checklist before rendering and evaluation.
-    function silentFetchChecklist(studentNumber) {
+    function fetchChecklistHtml(studentNumber) {
+        return fetch('https://crs.upd.edu.ph/curriculum_checklist/load_student', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({ studentno: studentNumber }),
+        }).then((response) => {
+            if (!response.ok) throw new Error(`Server status: ${response.status}`);
+            return response.text();
+        });
+    }
+
+    function silentFetchChecklist(studentNumber, prefetchedLiveChecklistPromise = null) {
         const statusDiv = document.getElementById('sil-status');
         const formattedView = document.getElementById('formatted-checklist-view');
 
@@ -2044,16 +2075,6 @@
             }
         };
 
-        const fetchLiveChecklist = () =>
-            fetch('https://crs.upd.edu.ph/curriculum_checklist/load_student', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: new URLSearchParams({ studentno: studentNumber }),
-            }).then((response) => {
-                if (!response.ok) throw new Error(`Server status: ${response.status}`);
-                return response.text();
-            });
-
         const showChecklistError = (error) => {
             statusDiv.style.color = 'red';
             statusDiv.innerText = 'Extraction failed.';
@@ -2061,7 +2082,8 @@
         };
 
         const cachedChecklist = readCachedChecklist();
-        const liveChecklistPromise = fetchLiveChecklist();
+        const liveChecklistPromise =
+            prefetchedLiveChecklistPromise || fetchChecklistHtml(studentNumber);
 
         if (cachedChecklist) {
             const cachedProcessingPromise = processChecklistHtml(cachedChecklist.html);
@@ -2669,6 +2691,8 @@
     const CRS_SCHEDULE_CACHE_EXPIRY_MS = 15 * 60 * 1000;
     let crsScheduleTermBasePromise = null;
     const crsScheduleLetterPagePromises = new Map();
+    const crsScheduleRowTextsByDocument = new WeakMap();
+    let crsScheduleCacheSaveTimer = null;
     let crsSchedulePersistentCache = (() => {
         try {
             const parsed = JSON.parse(localStorage.getItem(CRS_SCHEDULE_CACHE_KEY) || '{}');
@@ -2701,6 +2725,31 @@
         } catch (error) {
             console.warn('[USAD-CS] Could not persist CRS schedule cache:', error);
         }
+    }
+
+    // Coalesce availability updates that resolve in the same event-loop turn.
+    // A recommendation batch can check many courses, but it should serialize
+    // the persistent cache only once instead of once per course.
+    function scheduleCrsSchedulePersistentCacheSave() {
+        if (crsScheduleCacheSaveTimer !== null) return;
+        crsScheduleCacheSaveTimer = setTimeout(() => {
+            crsScheduleCacheSaveTimer = null;
+            saveCrsSchedulePersistentCache();
+        }, 0);
+    }
+
+    // Flatten schedule rows once per fetched letter page. Exact course checks
+    // can then reuse compact strings instead of repeatedly walking the DOM.
+    function getCrsScheduleRowTexts(doc) {
+        if (!doc) return [];
+        const cachedRows = crsScheduleRowTextsByDocument.get(doc);
+        if (cachedRows) return cachedRows;
+
+        const rowTexts = Array.from(doc.querySelectorAll('tr'), (row) =>
+            (row.innerText || row.textContent || '').replace(/\s+/g, ' ').trim(),
+        ).filter(Boolean);
+        crsScheduleRowTextsByDocument.set(doc, rowTexts);
+        return rowTexts;
     }
 
     // Performs a cross-origin userscript GET request and resolves with the response body as text.
@@ -3195,13 +3244,12 @@
         const classRowPattern = new RegExp(`^\\s*\\d+\\s+${exactCodePattern}(?=\\s|$)`, 'i');
 
         // CRS class rows begin with the numeric class code followed by the course.
-        const offered = Array.from(doc.querySelectorAll('tr')).some((row) => {
-            const rowText = (row.innerText || row.textContent || '').replace(/\s+/g, ' ').trim();
-            return classRowPattern.test(rowText);
-        });
+        const offered = getCrsScheduleRowTexts(doc).some((rowText) =>
+            classRowPattern.test(rowText),
+        );
 
         crsSchedulePersistentCache.availability[courseCode] = offered;
-        saveCrsSchedulePersistentCache();
+        scheduleCrsSchedulePersistentCacheSave();
         return offered;
     }
 
@@ -4040,7 +4088,16 @@
                 geElectivePassedCount,
             );
 
-            // 9.9 Build a balanced, semester-specific progression load.
+            // 9.9 Prepare the expensive progression work for a later task.
+            // Recommendations are the primary result, so their initial render
+            // must not wait for multi-semester planning that is hidden by default.
+            const schedulePrescribedProgression = () => {
+                const renderProgression = () => {
+                    scheduleDeferredWork(() => {
+                        if (evaluationVersion !== recommendationEvaluationVersion) return;
+                        pendingProgressionRender = null;
+
+            // Build a balanced, semester-specific progression load.
             // Column 4 of the rules sheet is authoritative for core-course
             // placement. Required GEs remain eligible when they are in the
             // current checklist, while the GE-elective choice comes from the
@@ -4169,38 +4226,6 @@
                 };
             })();
 
-            // Prioritize courses that unlock the greatest number of unfinished
-            // rule-sheet courses; use natural course order as a stable tie-break.
-            const progressionDependencyScore = (candidate) =>
-                rules.reduce((score, rule) => {
-                    if (hasPassed(rule.normCourse)) return score;
-                    const requirements = [...rule.prerequisites, ...rule.corequisites];
-                    const unlocksRule = requirements.some((requirement) =>
-                        requirement
-                            .split(/\s+or\s+/i)
-                            .some(
-                                (option) =>
-                                    normalizeCode(option.trim()) === candidate.normCode,
-                            ),
-                    );
-                    return score + (unlocksRule ? 1 : 0);
-                }, 0);
-
-            const progressionCoreCandidates = Array.from(
-                progressionCandidateByCode.values(),
-            )
-                .filter((item) => item.category !== COURSE_CATEGORIES.REQUIRED_GE)
-                .sort(
-                    (a, b) =>
-                        progressionDependencyScore(b) - progressionDependencyScore(a) ||
-                        naturalCourseSort(a.course, b.course),
-                );
-            const progressionRequiredGeCandidates = Array.from(
-                progressionCandidateByCode.values(),
-            )
-                .filter((item) => item.category === COURSE_CATEGORIES.REQUIRED_GE)
-                .sort((a, b) => naturalCourseSort(a.course, b.course));
-
             const enlistedProgressionCourses = enlistedCourses.map((course) => {
                 const rule = ruleByCode.get(course.normalizedCode);
                 return {
@@ -4210,195 +4235,6 @@
                     ),
                 };
             });
-
-            const buildProgressionLoad = () => {
-                const selected = [];
-                const selectedCodes = new Set();
-                let totalUnits = 0;
-
-                // Add a course and every not-yet-passed corequisite as one
-                // atomic bundle. Regular terms allow 21 units when the
-                // resulting load contains a lab course and 18 otherwise.
-                const addCandidateBundle = (candidate, reason) => {
-                    if (!candidate || selectedCodes.has(candidate.normCode)) return false;
-
-                    const bundle = [candidate];
-                    for (const corequisite of candidate.concurrent || []) {
-                        const normCorequisite = normalizeCode(corequisite);
-                        if (
-                            !normCorequisite ||
-                            selectedCodes.has(normCorequisite) ||
-                            hasPassed(normCorequisite) ||
-                            enlistedBaseCodes.has(normCorequisite)
-                        )
-                            continue;
-
-                        const corequisiteCandidate =
-                            progressionCandidateByCode.get(normCorequisite);
-                        if (!corequisiteCandidate) return false;
-                        bundle.push(corequisiteCandidate);
-                    }
-
-                    const uniqueBundle = bundle.filter(
-                        (item, index, items) =>
-                            !selectedCodes.has(item.normCode) &&
-                            items.findIndex(
-                                (other) => other.normCode === item.normCode,
-                            ) === index,
-                    );
-                    const bundleUnits = uniqueBundle.reduce(
-                        (sum, item) => sum + item.units,
-                        0,
-                    );
-                    const maximumUnits = getProgressionMaximumUnits(
-                        activeAcademicTermCode,
-                        [...selected, ...uniqueBundle],
-                    );
-                    if (
-                        !isValidProgressionCourseSet(
-                            activeAcademicTermCode,
-                            [...selected, ...uniqueBundle],
-                        )
-                    )
-                        return false;
-                    if (totalUnits + bundleUnits > maximumUnits) return false;
-
-                    uniqueBundle.forEach((item) => {
-                        selected.push({
-                            ...item,
-                            reason:
-                                item.normCode === candidate.normCode
-                                    ? reason
-                                    : `Corequisite of ${candidate.course}`,
-                        });
-                        selectedCodes.add(item.normCode);
-                        totalUnits += item.units;
-                    });
-                    return true;
-                };
-
-                const midyearCs195Candidate =
-                    activeAcademicTermCode === 'M'
-                        ? progressionCandidateByCode.get(cs195NormCode)
-                        : null;
-
-                if (midyearCs195Candidate) {
-                    addCandidateBundle(
-                        midyearCs195Candidate,
-                        'Exclusive Midyear CS 195 load',
-                    );
-                } else {
-                    // Reserve a balanced part of the load for GE progress
-                    // before filling the remaining capacity with
-                    // prerequisite-unlocking core courses and then any
-                    // additional required GEs.
-                    addCandidateBundle(
-                        progressionRequiredGeCandidates[0],
-                        'Unsatisfied required GE',
-                    );
-                    addCandidateBundle(
-                        geElectiveCandidate,
-                        geElectiveCandidate?.isPlaceholder
-                            ? 'Choose from the current GEC list'
-                            : 'Unsatisfied GE-elective requirement',
-                    );
-                    progressionCoreCandidates.forEach((item) =>
-                        addCandidateBundle(
-                            item,
-                            'Advances the core-course sequence',
-                        ),
-                    );
-                    progressionRequiredGeCandidates.slice(1).forEach((item) =>
-                        addCandidateBundle(item, 'Unsatisfied required GE'),
-                    );
-                }
-
-                return {
-                    selected,
-                    totalUnits,
-                    maximumUnits: getProgressionMaximumUnits(
-                        activeAcademicTermCode,
-                        selected,
-                    ),
-                };
-            };
-
-            const renderProgressionRecommendation = (
-                availabilityByCourse = null,
-                lookupFailed = false,
-            ) => {
-                if (!progressionStatusDiv || !progressionLoadDiv) return;
-
-                const { selected, totalUnits, maximumUnits } =
-                    buildProgressionLoad();
-                const currentTermLabel =
-                    activeAcademicTermCode === '1'
-                        ? 'first semester'
-                        : activeAcademicTermCode === '2'
-                          ? 'second semester'
-                          : activeAcademicTermCode === 'M'
-                            ? 'midyear'
-                            : 'current term';
-
-                if (!selected.length) {
-                    progressionStatusDiv.style.color = '#664d03';
-                    progressionStatusDiv.innerText =
-                        'No eligible courses can be placed in the current load.';
-                    progressionLoadDiv.innerHTML = '';
-                    return;
-                }
-
-                const grouped = {
-                    'Core Courses': selected.filter(
-                        (item) =>
-                            item.category !== 'Required GE Courses' &&
-                            item.category !== 'GE Elective',
-                    ),
-                    'Required GEs': selected.filter(
-                        (item) => item.category === 'Required GE Courses',
-                    ),
-                    'GE Elective': selected.filter(
-                        (item) => item.category === 'GE Elective',
-                    ),
-                };
-
-                let html = `<div style="display:flex; justify-content:space-between; align-items:center; padding:4px 6px; background:#fff; border:1px solid #e9d5ff; border-radius:4px;">
-                    <span style="font-size:11px; font-weight:bold; color:#581c87;">Recommended ${escapeHTML(currentTermLabel)} load</span>
-                    <span style="font-size:13px; font-weight:bold; color:#7b1113;">${totalUnits} / ${maximumUnits} units</span>
-                </div>`;
-
-                Object.entries(grouped).forEach(([label, items]) => {
-                    if (!items.length) return;
-                    html += `<div style="margin-top:5px;"><b style="font-size:11px; color:#7b1113;">${escapeHTML(label)}</b><ul style="margin:2px 0 0 18px; padding:0;">`;
-                    items.forEach((item) => {
-                        const checked = availabilityByCourse?.has(item.course);
-                        const offered = availabilityByCourse?.get(item.course) === true;
-                        const displayCourse = formatCourseDisplayName(item.course);
-                        const availabilityIcon =
-                            checked && offered
-                                ? ' <span title="Available in CRS" aria-label="Available in CRS">✅</span>'
-                                : item.fromCurrentGeList
-                                  ? ' <span title="Listed by GEC for the current term" aria-label="Listed by GEC for the current term">✅</span>'
-                                  : '';
-                        const units = isZeroAcademicUnitCourse(
-                            item.normCode || item.course,
-                            item.category,
-                        )
-                            ? `(${item.displayUnits})`
-                            : Number.isInteger(item.units)
-                              ? item.units
-                              : item.units.toFixed(1);
-                        html += `<li style="margin-bottom:2px; font-size:11px;"><b>${escapeHTML(displayCourse)}</b>${availabilityIcon} — ${units} units <span style="color:#666;">(${escapeHTML(item.reason)})</span></li>`;
-                    });
-                    html += '</ul></div>';
-                });
-
-                progressionLoadDiv.innerHTML = html;
-                progressionStatusDiv.style.color = lookupFailed ? '#856404' : '#666';
-                progressionStatusDiv.innerText = activeAcademicTermCode
-                    ? `Core-course placement follows column 4 of the rules sheet (${activeAcademicTermCode}); lab-aware unit caps follow column 5.`
-                    : 'CRS term could not be identified; semester-placement filtering was not applied.';
-            };
 
             // Builds consecutive prescribed loads until every unfinished
             // checklist slot has been placed. Each load projects successful
@@ -5178,12 +5014,15 @@
                     'Below is indicative sequence for the current enlistment and all remaining courses in the curriculum. Courses highlighed in green are currently enlisted.';
             };
 
-            const schedulePrescribedProgression = () => {
-                setTimeout(() => {
-                    if (evaluationVersion === recommendationEvaluationVersion) {
                         renderPrescribedProgression();
-                    }
-                }, 0);
+                    });
+                };
+
+                pendingProgressionRender = renderProgression;
+                if (!isProgressionHidden) {
+                    pendingProgressionRender = null;
+                    renderProgression();
+                }
             };
 
             // 9.10 Group, render, and verify course recommendations.
@@ -5368,4 +5207,9 @@
             msgDiv.innerText = `Evaluation crashed: ${err.message}. Check console for details.`;
         }
     }
+
+    // Start asynchronous work only after every helper, cache, and event handler
+    // has been initialized. This avoids relying on an early await to make later
+    // top-level declarations available before callbacks resume.
+    initializeAdvisingAssistant();
 })();
