@@ -111,6 +111,22 @@
         'CS175',
         'CS176',
     ]);
+    const FOUNDATION_LOAD_COURSE_CODES = new Set([
+        'CS10',
+        'CS11',
+        'CS12',
+        'CS20',
+        'CS21',
+        'CS30',
+        'CS31',
+        'CS32',
+        'CS33',
+        'MATH20',
+        'MATH21',
+        'MATH22',
+        'MATH23',
+        'MATH40',
+    ]);
     const ACRONYM_SUBJECTS = new Set([
         'BIO',
         'CS',
@@ -801,6 +817,49 @@
         };
     }
 
+    // Checks whether at least half of the current academic load consists of
+    // not-yet-passed foundation CS/Math courses. Math 20 remains visible as a
+    // four-unit course but contributes zero to academic-load accounting.
+    function getFoundationLoadRuleStatus(
+        totalLoadUnits,
+        enlistedCourses,
+        hasPassedCourse = () => false,
+    ) {
+        const normalizedTotalUnits = Number(totalLoadUnits);
+        const totalUnits =
+            Number.isFinite(normalizedTotalUnits) && normalizedTotalUnits > 0
+                ? normalizedTotalUnits
+                : 0;
+        const foundationUnits = (Array.isArray(enlistedCourses)
+            ? enlistedCourses
+            : []
+        ).reduce((sum, course) => {
+            const normalizedCode = normalizeCode(
+                course?.normalizedCode || course?.baseCode || '',
+            );
+            if (
+                !FOUNDATION_LOAD_COURSE_CODES.has(normalizedCode) ||
+                hasPassedCourse(normalizedCode)
+            ) {
+                return sum;
+            }
+
+            const { units } = getCourseUnitValues(
+                normalizedCode,
+                COURSE_CATEGORIES.CORE,
+                course?.creditText,
+            );
+            return sum + units;
+        }, 0);
+
+        return {
+            totalUnits,
+            foundationUnits,
+            ratio: totalUnits > 0 ? foundationUnits / totalUnits : 0,
+            satisfied: totalUnits <= 0 || foundationUnits >= totalUnits * 0.5,
+        };
+    }
+
     // Returns null when the requirement is not a standing rule; otherwise,
     // evaluates it against completed academic units.
     function getStandingRequirementStatus(requirement, academicUnits) {
@@ -1212,6 +1271,7 @@
             ensureEnlistedMath20ChecklistEntry,
             isZeroAcademicUnitCourse,
             getCourseUnitValues,
+            getFoundationLoadRuleStatus,
             getPassedAttemptLimit,
             hasReachedPassedAttemptLimit,
             getStandingRequirementStatus,
@@ -1269,6 +1329,7 @@
         <div id="info-id" style="font-size: 13px; margin-bottom: 10px;"><b>Student ID:</b> ${escapeHTML(studentId || 'N/A')}</div>
 
         <div id="unit-status"></div>
+        <div id="foundation-load-rule-status"></div>
         <div id="vso-status"></div>
         <div id="matcher-status" style="margin-top: 5px;"></div>
 
@@ -1433,6 +1494,7 @@
 
         [
             document.getElementById('unit-status'),
+            document.getElementById('foundation-load-rule-status'),
             document.getElementById('matcher-status'),
             document.getElementById('recommendations-requirements-layout'),
             document.getElementById('progression-recommender-box'),
@@ -1449,12 +1511,12 @@
 
         if (statusDiv) {
             statusDiv.style.color = '#666';
-            statusDiv.innerText = 'Loading checklist and current GEC course list...';
+            statusDiv.innerText = 'Checking VSO status...';
         }
 
-        // Check the VSO roster in parallel with the checklist and supporting
-        // data. A positive match suppresses every advising computation while
-        // retaining the checklist-only view.
+        // Resolve VSO status before inspecting current enlistments or starting
+        // any recommendation-support workflow. Listed students need only the
+        // curriculum checklist, so GE and curriculum-rule work is unnecessary.
         vsoStatusReadyPromise = loadVsoStudentStatus(studentId)
             .then((isListed) => {
                 isVsoStudent = isListed;
@@ -1467,9 +1529,18 @@
                 console.error('[USAD-CS] VSO roster loading failed:', error);
                 return false;
             });
+        const listedAsVso = await vsoStatusReadyPromise;
 
-        // Start both network workflows immediately. The checklist can be
-        // downloaded and parsed while the GE source is checked in parallel.
+        if (listedAsVso) {
+            await silentFetchChecklist(studentId);
+            return;
+        }
+
+        if (statusDiv) {
+            statusDiv.innerText = 'Loading checklist and current GEC course list...';
+        }
+
+        // After VSO exclusion, start the full advising workflows concurrently.
         geCourseListReadyPromise = loadGECourseList()
             .then((courses) => {
                 console.log(
@@ -1822,19 +1893,21 @@
                     });
                 });
 
-                const currentlyEnlistedCourseCodes = Array.from(
-                    document.querySelectorAll('table.classlist td.td_coursedesc'),
-                )
-                    .map((cell) =>
-                        parseCourseCodeFromClassDescription(
-                            cell.innerText || cell.textContent || '',
-                        ),
+                if (!isVsoStudent) {
+                    const currentlyEnlistedCourseCodes = Array.from(
+                        document.querySelectorAll('table.classlist td.td_coursedesc'),
                     )
-                    .filter(Boolean);
-                ensureEnlistedMath20ChecklistEntry(
-                    extractedStudentGrades,
-                    currentlyEnlistedCourseCodes,
-                );
+                        .map((cell) =>
+                            parseCourseCodeFromClassDescription(
+                                cell.innerText || cell.textContent || '',
+                            ),
+                        )
+                        .filter(Boolean);
+                    ensureEnlistedMath20ChecklistEntry(
+                        extractedStudentGrades,
+                        currentlyEnlistedCourseCodes,
+                    );
+                }
 
                 // Uncredited courses are outside #tblCourseGroupView. Include
                 // their passing grades in duplicate-course and prerequisite checks.
@@ -3590,6 +3663,20 @@
             const enlistedBaseCodes = new Set(
                 enlistedCourses.map((course) => course.normalizedCode),
             );
+
+            const foundationLoadStatus = getFoundationLoadRuleStatus(
+                totalUnits,
+                enlistedCourses,
+                hasPassed,
+            );
+            const foundationLoadStatusDiv = document.getElementById(
+                'foundation-load-rule-status',
+            );
+            if (foundationLoadStatusDiv) {
+                foundationLoadStatusDiv.innerHTML = foundationLoadStatus.satisfied
+                    ? ''
+                    : `<div style="color:#842029; background-color:#f8d7da; border:1px solid #f5c2c7; padding:5px 6px; border-radius:4px; margin-top:5px; font-size:13px; font-weight:bold;">🚫 50% CS/Math rule unsatisfied!</div>`;
+            }
 
             // Paired GE options should not be recommended against one another
             // while either option is already enlisted.
