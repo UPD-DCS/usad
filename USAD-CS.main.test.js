@@ -31,6 +31,7 @@ const {
     getPassedAttemptLimit,
     hasReachedPassedAttemptLimit,
     getStandingRequirementStatus,
+    formatRequirementForDisplay,
     getNstpPrerequisites,
     normalizeStudentNumber,
     parseVsoStudentNumbers,
@@ -185,6 +186,14 @@ assert.equal(getStandingRequirementStatus('SOSTANDING', 38), true);
 assert.equal(getStandingRequirementStatus('JR_STANDING', 73), false);
 assert.equal(getStandingRequirementStatus('JR_STANDING', 74), true);
 assert.equal(getStandingRequirementStatus('CS 12', 148), null);
+assert.equal(formatRequirementForDisplay('SO_STANDING'), 'Sophomore Standing');
+assert.equal(formatRequirementForDisplay('JR_STANDING'), 'Junior Standing');
+assert.equal(formatRequirementForDisplay('SR_STANDING'), 'Senior Standing');
+assert.equal(
+    formatRequirementForDisplay('JR_STANDING or CS 33'),
+    'Junior Standing or CS 33',
+);
+assert.equal(formatRequirementForDisplay('CS 33'), 'CS 33');
 assert.deepEqual(Array.from(getNstpPrerequisites(1)), ['SO_STANDING']);
 assert.deepEqual(
     Array.from(getNstpPrerequisites(1, ['SO STANDING'])),

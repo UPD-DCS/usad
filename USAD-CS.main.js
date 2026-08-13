@@ -811,6 +811,15 @@
         return Number.isFinite(normalizedUnits) && normalizedUnits >= threshold;
     }
 
+    // Converts internal standing-rule tokens into adviser-facing labels while
+    // preserving any other course requirements or OR expressions unchanged.
+    function formatRequirementForDisplay(requirement) {
+        return String(requirement || '')
+            .replace(/\bSO[_\s]*STANDING\b/gi, 'Sophomore Standing')
+            .replace(/\bJR[_\s]*STANDING\b/gi, 'Junior Standing')
+            .replace(/\bSR[_\s]*STANDING\b/gi, 'Senior Standing');
+    }
+
     function getNstpPrerequisites(nstpLevel, existingPrerequisites = []) {
         const prerequisites = [...existingPrerequisites];
         if (
@@ -1206,6 +1215,7 @@
             getPassedAttemptLimit,
             hasReachedPassedAttemptLimit,
             getStandingRequirementStatus,
+            formatRequirementForDisplay,
             getNstpPrerequisites,
             normalizeStudentNumber,
             parseVsoStudentNumbers,
@@ -3730,7 +3740,7 @@
                     } else if (!hasPassed(NSTP_1_STANDING_REQUIREMENT)) {
                         isEligible = false;
                         reason =
-                            'Missing prerequisites: SO_STANDING (37 academic units)';
+                            'Missing prerequisites: Sophomore Standing (37 academic units)';
                     } else {
                         isEligible = true;
                     }
@@ -3795,7 +3805,11 @@
                     if (!isEligible) {
                         const reasons = [];
                         if (!prereqsMet)
-                            reasons.push(`Missing prerequisites: ${missingPrereqs.join(', ')}`);
+                            reasons.push(
+                                `Missing prerequisites: ${missingPrereqs
+                                    .map(formatRequirementForDisplay)
+                                    .join(', ')}`,
+                            );
                         if (!coreqsMet)
                             reasons.push(`Missing corequisites: ${missingCoreqs.join(', ')}`);
                         reason = reasons.join('; ');
