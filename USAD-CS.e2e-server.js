@@ -128,6 +128,9 @@ function buildFixturePage(version) {
             if (scenario === 'sts') addEnlisted('STS 1 THR');
             if (scenario === 'drmaps') addEnlisted('DRMAPS THR');
             if (scenario === 'cs171') addEnlisted('CS 171 THR');
+            if (scenario === 'foundation-under-50') {
+                removeEnlisted(/^\\s*(?:CS\\s*(?:10|11|12|20|21|30|31|32|33)|Math\\s*(?:20|21|22|23|40))\\b/i);
+            }
             if (scenario === 'underload') {
                 removeEnlisted(/^\\s*CS 198\\b/i);
                 removeEnlisted(/^\\s*CS 174\\b/i);

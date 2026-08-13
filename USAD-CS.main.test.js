@@ -28,6 +28,7 @@ const {
     ensureEnlistedMath20ChecklistEntry,
     isZeroAcademicUnitCourse,
     getCourseUnitValues,
+    getFoundationLoadRuleStatus,
     getPassedAttemptLimit,
     hasReachedPassedAttemptLimit,
     getStandingRequirementStatus,
@@ -308,6 +309,45 @@ const enlistedMath20Candidate = buildEnlistedProgressionCandidate(
 assert.equal(enlistedMath20Candidate.units, 0);
 assert.equal(enlistedMath20Candidate.displayUnits, 4);
 assert.equal(enlistedMath20Candidate.category, 'Core Courses');
+
+const satisfiedFoundationLoad = getFoundationLoadRuleStatus(
+    18,
+    [
+        { normalizedCode: 'CS11', creditText: '4.0' },
+        { normalizedCode: 'CS12', creditText: '4.0' },
+        { normalizedCode: 'MATH21', creditText: '4.0' },
+        { normalizedCode: 'KAS1', creditText: '3.0' },
+    ],
+    () => false,
+);
+assert.equal(satisfiedFoundationLoad.foundationUnits, 12);
+assert.equal(satisfiedFoundationLoad.satisfied, true);
+
+const unsatisfiedFoundationLoad = getFoundationLoadRuleStatus(
+    18,
+    [
+        { normalizedCode: 'CS11', creditText: '4.0' },
+        { normalizedCode: 'MATH20', creditText: '4.0' },
+        { normalizedCode: 'MATH21', creditText: '4.0' },
+        { normalizedCode: 'KAS1', creditText: '3.0' },
+    ],
+    (courseCode) => courseCode === 'MATH21',
+);
+assert.equal(unsatisfiedFoundationLoad.foundationUnits, 4);
+assert.equal(unsatisfiedFoundationLoad.satisfied, false);
+assert.equal(getFoundationLoadRuleStatus(0, [], () => false).satisfied, true);
+assert.ok(source.includes('🚫 50% CS/Math rule unsatisfied!'));
+assert.ok(source.includes("statusDiv.innerText = 'Checking VSO status...';"));
+assert.ok(
+    source.indexOf('const listedAsVso = await vsoStatusReadyPromise;') <
+        source.indexOf('geCourseListReadyPromise = loadGECourseList()'),
+);
+assert.ok(
+    source.includes(
+        "if (listedAsVso) {\n            await silentFetchChecklist(studentId);\n            return;",
+    ),
+);
+assert.ok(source.includes('if (!isVsoStudent) {'));
 
 assert.deepEqual(
     Array.from(
