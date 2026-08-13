@@ -824,6 +824,32 @@
         };
     }
 
+    // CRS may list one course in separate lecture and laboratory rows. Sum
+    // every component carrying the same normalized course code so the course's
+    // foundation-load contribution reflects all of its enlisted components.
+    function getEnlistedCourseUnitsByCode(enlistedCourses) {
+        const unitsByCode = new Map();
+
+        for (const course of Array.isArray(enlistedCourses) ? enlistedCourses : []) {
+            const normalizedCode = normalizeCode(
+                course?.normalizedCode || course?.baseCode || '',
+            );
+            if (!normalizedCode) continue;
+
+            const { units } = getCourseUnitValues(
+                normalizedCode,
+                COURSE_CATEGORIES.CORE,
+                course?.creditText,
+            );
+            unitsByCode.set(
+                normalizedCode,
+                (unitsByCode.get(normalizedCode) || 0) + units,
+            );
+        }
+
+        return unitsByCode;
+    }
+
     // Checks whether at least half of the current academic load consists of
     // not-yet-passed foundation CS/Math courses. Math 20 remains visible as a
     // four-unit course but contributes zero to academic-load accounting.
@@ -837,27 +863,16 @@
             Number.isFinite(normalizedTotalUnits) && normalizedTotalUnits > 0
                 ? normalizedTotalUnits
                 : 0;
-        const foundationUnits = (Array.isArray(enlistedCourses)
-            ? enlistedCourses
-            : []
-        ).reduce((sum, course) => {
-            const normalizedCode = normalizeCode(
-                course?.normalizedCode || course?.baseCode || '',
-            );
-            if (
-                !FOUNDATION_LOAD_COURSE_CODES.has(normalizedCode) ||
-                hasPassedCourse(normalizedCode)
-            ) {
-                return sum;
-            }
-
-            const { units } = getCourseUnitValues(
-                normalizedCode,
-                COURSE_CATEGORIES.CORE,
-                course?.creditText,
-            );
-            return sum + units;
-        }, 0);
+        const foundationUnits = Array.from(
+            getEnlistedCourseUnitsByCode(enlistedCourses),
+        ).reduce(
+            (sum, [normalizedCode, units]) =>
+                FOUNDATION_LOAD_COURSE_CODES.has(normalizedCode) &&
+                !hasPassedCourse(normalizedCode)
+                    ? sum + units
+                    : sum,
+            0,
+        );
 
         return {
             totalUnits,
@@ -1309,6 +1324,7 @@
             ensureEnlistedMath20ChecklistEntry,
             isZeroAcademicUnitCourse,
             getCourseUnitValues,
+            getEnlistedCourseUnitsByCode,
             getFoundationLoadRuleStatus,
             getFoundationCourseOptionStatus,
             getPassedAttemptLimit,
