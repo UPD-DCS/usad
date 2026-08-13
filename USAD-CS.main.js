@@ -126,6 +126,10 @@
         'MATH22',
         'MATH23',
         'MATH40',
+        'CS132',
+        'CS133',
+        'CS136',
+        'CS180',
     ]);
     const ACRONYM_SUBJECTS = new Set([
         'BIO',
@@ -860,6 +864,37 @@
         };
     }
 
+    // Skip the 50% rule when every unfinished foundation course is already
+    // enlisted. Otherwise, a failing load is advisory when every unfinished,
+    // unenlisted foundation option is blocked by prerequisites.
+    function getFoundationCourseOptionStatus(
+        remainingFoundationCourseCodes,
+        enlistedCourseCodes,
+        prereqSatisfiedCourseCodes,
+    ) {
+        const remainingCodes = Array.from(remainingFoundationCourseCodes || [])
+            .map(normalizeCode)
+            .filter(Boolean);
+        const enlistedCodes = new Set(
+            Array.from(enlistedCourseCodes || []).map(normalizeCode),
+        );
+        const prerequisiteReadyCodes = new Set(
+            Array.from(prereqSatisfiedCourseCodes || []).map(normalizeCode),
+        );
+        const unenlistedRemainingCodes = remainingCodes.filter(
+            (courseCode) => !enlistedCodes.has(courseCode),
+        );
+
+        return {
+            shouldCheck: unenlistedRemainingCodes.length > 0,
+            hasOnlyPrerequisiteBlockedOptions:
+                unenlistedRemainingCodes.length > 0 &&
+                unenlistedRemainingCodes.every(
+                    (courseCode) => !prerequisiteReadyCodes.has(courseCode),
+                ),
+        };
+    }
+
     // Returns null when the requirement is not a standing rule; otherwise,
     // evaluates it against completed academic units.
     function getStandingRequirementStatus(requirement, academicUnits) {
@@ -1272,6 +1307,7 @@
             isZeroAcademicUnitCourse,
             getCourseUnitValues,
             getFoundationLoadRuleStatus,
+            getFoundationCourseOptionStatus,
             getPassedAttemptLimit,
             hasReachedPassedAttemptLimit,
             getStandingRequirementStatus,
@@ -3664,18 +3700,40 @@
                 enlistedCourses.map((course) => course.normalizedCode),
             );
 
-            const foundationLoadStatus = getFoundationLoadRuleStatus(
-                totalUnits,
-                enlistedCourses,
-                hasPassed,
+            const remainingFoundationCourseCodes = Array.from(
+                FOUNDATION_LOAD_COURSE_CODES,
+            ).filter(
+                (courseCode) =>
+                    remainingChecklistCodes.has(courseCode) &&
+                    !hasPassed(courseCode),
+            );
+            const foundationCourseOptionStatus = getFoundationCourseOptionStatus(
+                remainingFoundationCourseCodes,
+                enlistedBaseCodes,
+                prereqSatisfiedSet,
             );
             const foundationLoadStatusDiv = document.getElementById(
                 'foundation-load-rule-status',
             );
             if (foundationLoadStatusDiv) {
-                foundationLoadStatusDiv.innerHTML = foundationLoadStatus.satisfied
-                    ? ''
-                    : `<div style="color:#842029; background-color:#f8d7da; border:1px solid #f5c2c7; padding:5px 6px; border-radius:4px; margin-top:5px; font-size:13px; font-weight:bold;">🚫 50% CS/Math rule unsatisfied!</div>`;
+                if (!foundationCourseOptionStatus.shouldCheck) {
+                    foundationLoadStatusDiv.innerHTML = '';
+                } else {
+                    const foundationLoadStatus = getFoundationLoadRuleStatus(
+                        totalUnits,
+                        enlistedCourses,
+                        hasPassed,
+                    );
+                    if (foundationLoadStatus.satisfied) {
+                        foundationLoadStatusDiv.innerHTML = '';
+                    } else if (
+                        foundationCourseOptionStatus.hasOnlyPrerequisiteBlockedOptions
+                    ) {
+                        foundationLoadStatusDiv.innerHTML = `<div style="color:#664d03; background-color:#fff3cd; border:1px solid #ffe69c; padding:5px 6px; border-radius:4px; margin-top:5px; font-size:13px; font-weight:bold;">⚠️ 50% CS/Math rule unsatisfied! (check enlistments: few eligible courses)</div>`;
+                    } else {
+                        foundationLoadStatusDiv.innerHTML = `<div style="color:#842029; background-color:#f8d7da; border:1px solid #f5c2c7; padding:5px 6px; border-radius:4px; margin-top:5px; font-size:13px; font-weight:bold;">🚫 50% CS/Math rule unsatisfied!</div>`;
+                    }
+                }
             }
 
             // Paired GE options should not be recommended against one another

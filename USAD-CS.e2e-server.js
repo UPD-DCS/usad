@@ -128,7 +128,17 @@ function buildFixturePage(version) {
             if (scenario === 'sts') addEnlisted('STS 1 THR');
             if (scenario === 'drmaps') addEnlisted('DRMAPS THR');
             if (scenario === 'cs171') addEnlisted('CS 171 THR');
-            if (scenario === 'foundation-under-50') {
+            if (
+                scenario === 'foundation-few-eligible' ||
+                scenario === 'foundation-all-remaining-enlisted'
+            ) {
+                addEnlisted('CS 132 THR');
+            }
+            if (
+                scenario === 'foundation-under-50' ||
+                scenario === 'foundation-few-eligible' ||
+                scenario === 'foundation-all-remaining-enlisted'
+            ) {
                 removeEnlisted(/^\\s*(?:CS\\s*(?:10|11|12|20|21|30|31|32|33)|Math\\s*(?:20|21|22|23|40))\\b/i);
             }
             if (scenario === 'underload') {
@@ -148,7 +158,41 @@ function buildFixturePage(version) {
             const nativeFetch = window.fetch.bind(window);
             window.fetch = (url, options) => {
                 if (String(url).includes('/curriculum_checklist/load_student')) {
-                    return nativeFetch('/checklist-data', { cache: 'no-store' });
+                    return nativeFetch('/checklist-data', { cache: 'no-store' }).then(
+                        async (response) => {
+                            if (
+                                scenario !== 'foundation-few-eligible' &&
+                                scenario !== 'foundation-all-remaining-enlisted'
+                            ) {
+                                return response;
+                            }
+
+                            const doc = new DOMParser().parseFromString(
+                                await response.text(),
+                                'text/html',
+                            );
+                            doc.querySelectorAll('#tblCourseGroupView tr').forEach((row) => {
+                                const course = (
+                                    row.querySelector(':scope > td:first-child')?.textContent || ''
+                                )
+                                    .replace(/\\{\\d+\\}/g, '')
+                                    .replace(/\\s+/g, ' ')
+                                    .trim();
+                                const isOrdinaryFoundation = /^(?:CS\\s*(?:10|11|12|20|21|30|31|32|33)|Math\\s*(?:20|21|22|23|40))\\b/i.test(course);
+                                const isUnusedAdvancedFoundation =
+                                    scenario === 'foundation-few-eligible'
+                                        ? /^CS\\s*(?:136|180)\\b/i.test(course)
+                                        : /^CS\\s*(?:133|136|180)\\b/i.test(course);
+                                if (isOrdinaryFoundation || isUnusedAdvancedFoundation) {
+                                    row.remove();
+                                }
+                            });
+                            return new Response(doc.documentElement.outerHTML, {
+                                status: response.status,
+                                headers: { 'Content-Type': 'text/html; charset=utf-8' },
+                            });
+                        },
+                    );
                 }
                 return nativeFetch(url, options);
             };
@@ -188,7 +232,14 @@ function buildFixturePage(version) {
 
             localStorage.clear();
             sessionStorage.clear();
-            localStorage.setItem('crs_prereq_sheet_data', ${JSON.stringify(prerequisiteCsv)});
+            let fixturePrerequisiteCsv = ${JSON.stringify(prerequisiteCsv)};
+            if (scenario === 'foundation-few-eligible') {
+                fixturePrerequisiteCsv = fixturePrerequisiteCsv.replace(
+                    /"(CS 133)","None"/g,
+                    '"$1","CS 999"',
+                );
+            }
+            localStorage.setItem('crs_prereq_sheet_data', fixturePrerequisiteCsv);
             localStorage.setItem('crs_prereq_sheet_time', String(Date.now()));
             if (scenario !== 'ge-placeholder') {
                 localStorage.setItem('upd_ge_course_list_dynamic', ${JSON.stringify(

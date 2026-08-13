@@ -29,6 +29,7 @@ const {
     isZeroAcademicUnitCourse,
     getCourseUnitValues,
     getFoundationLoadRuleStatus,
+    getFoundationCourseOptionStatus,
     getPassedAttemptLimit,
     hasReachedPassedAttemptLimit,
     getStandingRequirementStatus,
@@ -323,6 +324,18 @@ const satisfiedFoundationLoad = getFoundationLoadRuleStatus(
 assert.equal(satisfiedFoundationLoad.foundationUnits, 12);
 assert.equal(satisfiedFoundationLoad.satisfied, true);
 
+const advancedFoundationLoad = getFoundationLoadRuleStatus(
+    18,
+    [
+        { normalizedCode: 'CS132', creditText: '3.0' },
+        { normalizedCode: 'CS133', creditText: '3.0' },
+        { normalizedCode: 'CS136', creditText: '3.0' },
+    ],
+    () => false,
+);
+assert.equal(advancedFoundationLoad.foundationUnits, 9);
+assert.equal(advancedFoundationLoad.satisfied, true);
+
 const unsatisfiedFoundationLoad = getFoundationLoadRuleStatus(
     18,
     [
@@ -337,6 +350,39 @@ assert.equal(unsatisfiedFoundationLoad.foundationUnits, 4);
 assert.equal(unsatisfiedFoundationLoad.satisfied, false);
 assert.equal(getFoundationLoadRuleStatus(0, [], () => false).satisfied, true);
 assert.ok(source.includes('🚫 50% CS/Math rule unsatisfied!'));
+const prerequisiteBlockedFoundationOptions = getFoundationCourseOptionStatus(
+    ['CS 132', 'CS 133'],
+    ['CS 132'],
+    ['CS 132'],
+);
+assert.equal(prerequisiteBlockedFoundationOptions.shouldCheck, true);
+assert.equal(
+    prerequisiteBlockedFoundationOptions.hasOnlyPrerequisiteBlockedOptions,
+    true,
+);
+const eligibleFoundationOptions = getFoundationCourseOptionStatus(
+    ['CS 33', 'CS 132'],
+    ['CS 132'],
+    ['CS 33', 'CS 132'],
+);
+assert.equal(eligibleFoundationOptions.shouldCheck, true);
+assert.equal(eligibleFoundationOptions.hasOnlyPrerequisiteBlockedOptions, false);
+const allRemainingFoundationCoursesEnlisted = getFoundationCourseOptionStatus(
+    ['CS 132'],
+    ['CS 132'],
+    [],
+);
+assert.equal(allRemainingFoundationCoursesEnlisted.shouldCheck, false);
+assert.equal(
+    allRemainingFoundationCoursesEnlisted.hasOnlyPrerequisiteBlockedOptions,
+    false,
+);
+assert.equal(getFoundationCourseOptionStatus([], [], []).shouldCheck, false);
+assert.ok(
+    source.includes(
+        '⚠️ 50% CS/Math rule unsatisfied! (check enlistments: few eligible courses)',
+    ),
+);
 assert.ok(source.includes("statusDiv.innerText = 'Checking VSO status...';"));
 assert.ok(
     source.indexOf('const listedAsVso = await vsoStatusReadyPromise;') <
