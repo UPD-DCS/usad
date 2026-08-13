@@ -874,9 +874,9 @@
     // preserving any other course requirements or OR expressions unchanged.
     function formatRequirementForDisplay(requirement) {
         return String(requirement || '')
-            .replace(/\bSO[_\s]*STANDING\b/gi, 'Sophomore Standing')
-            .replace(/\bJR[_\s]*STANDING\b/gi, 'Junior Standing')
-            .replace(/\bSR[_\s]*STANDING\b/gi, 'Senior Standing');
+            .replace(/\bSO[_\s]*STANDING\b/gi, 'SOPHOMORE STANDING')
+            .replace(/\bJR[_\s]*STANDING\b/gi, 'JUNIOR STANDING')
+            .replace(/\bSR[_\s]*STANDING\b/gi, 'SENIOR STANDING');
     }
 
     function getNstpPrerequisites(nstpLevel, existingPrerequisites = []) {
@@ -3827,7 +3827,7 @@
                     } else if (!hasPassed(NSTP_1_STANDING_REQUIREMENT)) {
                         isEligible = false;
                         reason =
-                            'Missing prerequisites: Sophomore Standing (37 academic units)';
+                            'Missing prerequisites: SOPHOMORE STANDING (37 academic units)';
                     } else {
                         isEligible = true;
                     }
