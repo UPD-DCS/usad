@@ -28,6 +28,7 @@ const {
     ensureEnlistedMath20ChecklistEntry,
     isZeroAcademicUnitCourse,
     getCourseUnitValues,
+    getEnlistedCourseUnitsByCode,
     getFoundationLoadRuleStatus,
     getFoundationCourseOptionStatus,
     getPassedAttemptLimit,
@@ -342,6 +343,26 @@ const integratedFoundationLoad = getFoundationLoadRuleStatus(
 );
 assert.equal(integratedFoundationLoad.foundationUnits, 4);
 assert.equal(integratedFoundationLoad.satisfied, false);
+const nonzeroLectureLabUnits = getEnlistedCourseUnitsByCode([
+    { normalizedCode: 'CS33', creditText: '3.0' },
+    { normalizedCode: 'CS33', creditText: '1.0' },
+    { normalizedCode: 'CS140', creditText: '3.0' },
+    { normalizedCode: 'CS140', creditText: '1.0' },
+]);
+assert.equal(nonzeroLectureLabUnits.get('CS33'), 4);
+assert.equal(nonzeroLectureLabUnits.get('CS140'), 4);
+const nonzeroIntegratedFoundationLoad = getFoundationLoadRuleStatus(
+    15,
+    [
+        { normalizedCode: 'CS33', creditText: '3.0' },
+        { normalizedCode: 'CS33', creditText: '1.0' },
+        { normalizedCode: 'CS132', creditText: '3.0' },
+        { normalizedCode: 'KAS1', creditText: '3.0' },
+    ],
+    () => false,
+);
+assert.equal(nonzeroIntegratedFoundationLoad.foundationUnits, 7);
+assert.equal(nonzeroIntegratedFoundationLoad.satisfied, false);
 
 const advancedFoundationLoad = getFoundationLoadRuleStatus(
     18,
