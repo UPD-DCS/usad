@@ -103,6 +103,14 @@
         COURSE_CATEGORIES.PE,
     ]);
     const ZERO_ACADEMIC_UNIT_COURSE_CODES = new Set(['MATH20']);
+    const TWICE_REPEATABLE_COURSE_CODES = new Set([
+        'CS171',
+        'CS172',
+        'CS173',
+        'CS174',
+        'CS175',
+        'CS176',
+    ]);
     const ACRONYM_SUBJECTS = new Set([
         'BIO',
         'CS',
@@ -142,6 +150,7 @@
     // Memory store for extracted student checklist grades
     const extractedStudentGrades = new Map();
     const passedAttemptCourseCodes = new Set();
+    const passedAttemptCourseCounts = new Map();
     const normalizeCache = new Map();
 
     // Summary values read directly from the CRS Curriculum Checklist.
@@ -353,6 +362,27 @@
         if (['PASSED', 'PASS', 'P', 'S'].includes(cleanGrade)) return true;
         const num = parseFloat(cleanGrade);
         return !isNaN(num) && num > 0 && num <= 3.0;
+    }
+
+    // CS 171-176 may each receive credit twice. Other courses retain the
+    // ordinary one-passing-attempt limit used by duplicate-course validation.
+    function getPassedAttemptLimit(courseCode) {
+        return TWICE_REPEATABLE_COURSE_CODES.has(normalizeCode(courseCode)) ? 2 : 1;
+    }
+
+    function hasReachedPassedAttemptLimit(courseCode, passedAttemptCount) {
+        return Number(passedAttemptCount || 0) >= getPassedAttemptLimit(courseCode);
+    }
+
+    function recordPassedCourseAttempt(courseCode) {
+        const normalizedCourse = normalizeCode(courseCode);
+        if (!normalizedCourse) return;
+
+        passedAttemptCourseCodes.add(normalizedCourse);
+        passedAttemptCourseCounts.set(
+            normalizedCourse,
+            (passedAttemptCourseCounts.get(normalizedCourse) || 0) + 1,
+        );
     }
 
     // Extracts the most relevant course attempt from a checklist row, preferring a passing attempt when one exists.
@@ -1173,6 +1203,8 @@
             ensureEnlistedMath20ChecklistEntry,
             isZeroAcademicUnitCourse,
             getCourseUnitValues,
+            getPassedAttemptLimit,
+            hasReachedPassedAttemptLimit,
             getStandingRequirementStatus,
             getNstpPrerequisites,
             normalizeStudentNumber,
@@ -1628,6 +1660,7 @@
                 const rows = Array.from(table.querySelectorAll('tr'));
                 extractedStudentGrades.clear();
                 passedAttemptCourseCodes.clear();
+                passedAttemptCourseCounts.clear();
 
                 let nstpOccurrence = 0;
                 let rowSequence = 0;
@@ -1672,8 +1705,7 @@
                         const effectiveAttemptGrade = extractFinalGrade(attempt.grade);
                         if (!isPassingGrade(effectiveAttemptGrade)) return;
 
-                        const passedCourseCode = normalizeCode(attempt.rawClass || '');
-                        if (passedCourseCode) passedAttemptCourseCodes.add(passedCourseCode);
+                        recordPassedCourseAttempt(attempt.rawClass || '');
                     });
 
                     // Select the latest attempt in one pass instead of sorting the full history.
@@ -1965,10 +1997,7 @@
 
             if (!rawClass || !isPassingGrade(finalGrade)) return;
 
-            const normalizedCourse = normalizeCode(rawClass);
-            if (normalizedCourse) {
-                passedAttemptCourseCodes.add(normalizedCourse);
-            }
+            recordPassedCourseAttempt(rawClass);
         });
     }
 
@@ -3715,9 +3744,18 @@
                     } else {
                         isEligible = true;
                     }
-                } else if (hasPassed(normBase)) {
+                } else if (
+                    hasReachedPassedAttemptLimit(
+                        normBase,
+                        passedAttemptCourseCounts.get(normBase) ||
+                            (hasPassed(normBase) ? 1 : 0),
+                    )
+                ) {
                     isEligible = false;
-                    reason = 'Course already passed';
+                    reason =
+                        getPassedAttemptLimit(normBase) === 2
+                            ? 'Course already passed twice'
+                            : 'Course already passed';
                 } else if (isPE || isGenericNSTP || isGE) {
                     isEligible = true;
                 } else if (matchingRule) {
@@ -3786,9 +3824,9 @@
                 }
 
                 // Ineligibility has priority over CS-elective verification.
-                // A CS elective that has already been passed, or otherwise
-                // fails an eligibility rule, belongs in the ineligible list
-                // rather than the separate elective-verification warning.
+                // A repeatable CS elective that already has two passing grades,
+                // or otherwise fails an eligibility rule, belongs in the
+                // ineligible list rather than elective verification.
                 if (!isEligible) {
                     row.style.backgroundColor = '#f8d7da';
                     ineligibleEnlisted.push(

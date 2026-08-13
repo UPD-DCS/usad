@@ -28,6 +28,8 @@ const {
     ensureEnlistedMath20ChecklistEntry,
     isZeroAcademicUnitCourse,
     getCourseUnitValues,
+    getPassedAttemptLimit,
+    hasReachedPassedAttemptLimit,
     getStandingRequirementStatus,
     getNstpPrerequisites,
     normalizeStudentNumber,
@@ -167,6 +169,15 @@ assert.equal(math20UnitValues.displayUnits, 4);
 const math21UnitValues = getCourseUnitValues('Math 21', 'Core Courses', '4');
 assert.equal(math21UnitValues.units, 4);
 assert.equal(math21UnitValues.displayUnits, 4);
+
+assert.equal(getPassedAttemptLimit('CS 171'), 2);
+assert.equal(getPassedAttemptLimit('CS176'), 2);
+assert.equal(getPassedAttemptLimit('CS 170'), 1);
+assert.equal(hasReachedPassedAttemptLimit('CS 171', 1), false);
+assert.equal(hasReachedPassedAttemptLimit('CS 171', 2), true);
+assert.equal(hasReachedPassedAttemptLimit('CS 176', 2), true);
+assert.equal(hasReachedPassedAttemptLimit('CS 12', 1), true);
+assert.ok(source.includes("? 'Course already passed twice'"));
 
 assert.equal(getStandingRequirementStatus('SO_STANDING', 36), false);
 assert.equal(getStandingRequirementStatus('SO STANDING', 37), true);
