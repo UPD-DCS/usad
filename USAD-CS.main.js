@@ -111,26 +111,7 @@
         'CS175',
         'CS176',
     ]);
-    const FOUNDATION_LOAD_COURSE_CODES = new Set([
-        'CS10',
-        'CS11',
-        'CS12',
-        'CS20',
-        'CS21',
-        'CS30',
-        'CS31',
-        'CS32',
-        'CS33',
-        'MATH20',
-        'MATH21',
-        'MATH22',
-        'MATH23',
-        'MATH40',
-        'CS132',
-        'CS133',
-        'CS136',
-        'CS180',
-    ]);
+    const CS_MATH_LOAD_RULE_EXEMPTION_CODES = new Set(['CS140', 'CS150']);
     const ACRONYM_SUBJECTS = new Set([
         'BIO',
         'CS',
@@ -862,10 +843,8 @@
     }
 
     // Checks whether at least half of the current academic load consists of
-    // currently enlisted CS or Math courses. The foundation-course list only
-    // controls whether this check still applies; it must not exclude advanced
-    // CS/Math courses from the numerator. Math 20 remains visible as a four-unit
-    // course but contributes zero to academic-load accounting.
+    // currently enlisted CS or Math courses. Math 20 remains visible as a
+    // four-unit course but contributes zero to academic-load accounting.
     function getCsMathLoadRuleStatus(totalLoadUnits, enlistedCourses) {
         const normalizedTotalUnits = Number(totalLoadUnits);
         const totalUnits =
@@ -888,35 +867,13 @@
         };
     }
 
-    // Skip the 50% rule when every unfinished foundation course is already
-    // enlisted. Otherwise, a failing load is advisory when every unfinished,
-    // unenlisted foundation option is blocked by prerequisites.
-    function getFoundationCourseOptionStatus(
-        remainingFoundationCourseCodes,
-        enlistedCourseCodes,
-        prereqSatisfiedCourseCodes,
-    ) {
-        const remainingCodes = Array.from(remainingFoundationCourseCodes || [])
-            .map(normalizeCode)
-            .filter(Boolean);
-        const enlistedCodes = new Set(
-            Array.from(enlistedCourseCodes || []).map(normalizeCode),
+    // Students currently eligible to take CS 140 or CS 150 are exempt from
+    // the 50% CS/Math load check. Eligibility is supplied by the same complete
+    // prerequisite/corequisite evaluation used for course recommendations.
+    function isCsMathLoadRuleExempt(eligibleCourseCodes) {
+        return Array.from(eligibleCourseCodes || []).some((courseCode) =>
+            CS_MATH_LOAD_RULE_EXEMPTION_CODES.has(normalizeCode(courseCode)),
         );
-        const prerequisiteReadyCodes = new Set(
-            Array.from(prereqSatisfiedCourseCodes || []).map(normalizeCode),
-        );
-        const unenlistedRemainingCodes = remainingCodes.filter(
-            (courseCode) => !enlistedCodes.has(courseCode),
-        );
-
-        return {
-            shouldCheck: unenlistedRemainingCodes.length > 0,
-            hasOnlyPrerequisiteBlockedOptions:
-                unenlistedRemainingCodes.length > 0 &&
-                unenlistedRemainingCodes.every(
-                    (courseCode) => !prerequisiteReadyCodes.has(courseCode),
-                ),
-        };
     }
 
     // Returns null when the requirement is not a standing rule; otherwise,
@@ -1332,7 +1289,7 @@
             getCourseUnitValues,
             getEnlistedCourseUnitsByCode,
             getCsMathLoadRuleStatus,
-            getFoundationCourseOptionStatus,
+            isCsMathLoadRuleExempt,
             getPassedAttemptLimit,
             hasReachedPassedAttemptLimit,
             getStandingRequirementStatus,
@@ -3762,23 +3719,11 @@
                 enlistedCourses.map((course) => course.normalizedCode),
             );
 
-            const remainingFoundationCourseCodes = Array.from(
-                FOUNDATION_LOAD_COURSE_CODES,
-            ).filter(
-                (courseCode) =>
-                    remainingChecklistCodes.has(courseCode) &&
-                    !hasPassed(courseCode),
-            );
-            const foundationCourseOptionStatus = getFoundationCourseOptionStatus(
-                remainingFoundationCourseCodes,
-                enlistedBaseCodes,
-                prereqSatisfiedSet,
-            );
             const foundationLoadStatusDiv = document.getElementById(
                 'foundation-load-rule-status',
             );
             if (foundationLoadStatusDiv) {
-                if (!foundationCourseOptionStatus.shouldCheck) {
+                if (isCsMathLoadRuleExempt(eligibleCodesSet)) {
                     foundationLoadStatusDiv.innerHTML = '';
                 } else {
                     const csMathLoadStatus = getCsMathLoadRuleStatus(
@@ -3787,10 +3732,6 @@
                     );
                     if (csMathLoadStatus.satisfied) {
                         foundationLoadStatusDiv.innerHTML = '';
-                    } else if (
-                        foundationCourseOptionStatus.hasOnlyPrerequisiteBlockedOptions
-                    ) {
-                        foundationLoadStatusDiv.innerHTML = `<div style="color:#664d03; background-color:#fff3cd; border:1px solid #ffe69c; padding:5px 6px; border-radius:4px; margin-top:5px; font-size:13px; font-weight:bold;">⚠️ 50% CS/Math rule unsatisfied! (check enlistments: few eligible courses)</div>`;
                     } else {
                         foundationLoadStatusDiv.innerHTML = `<div style="color:#842029; background-color:#f8d7da; border:1px solid #f5c2c7; padding:5px 6px; border-radius:4px; margin-top:5px; font-size:13px; font-weight:bold;">🚫 50% CS/Math rule unsatisfied!</div>`;
                     }

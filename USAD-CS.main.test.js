@@ -30,7 +30,7 @@ const {
     getCourseUnitValues,
     getEnlistedCourseUnitsByCode,
     getCsMathLoadRuleStatus,
-    getFoundationCourseOptionStatus,
+    isCsMathLoadRuleExempt,
     getPassedAttemptLimit,
     hasReachedPassedAttemptLimit,
     getStandingRequirementStatus,
@@ -418,39 +418,12 @@ assert.equal(unsatisfiedCsMathLoad.csMathUnits, 8);
 assert.equal(unsatisfiedCsMathLoad.satisfied, false);
 assert.equal(getCsMathLoadRuleStatus(0, []).satisfied, true);
 assert.ok(source.includes('🚫 50% CS/Math rule unsatisfied!'));
-const prerequisiteBlockedFoundationOptions = getFoundationCourseOptionStatus(
-    ['CS 132', 'CS 133'],
-    ['CS 132'],
-    ['CS 132'],
-);
-assert.equal(prerequisiteBlockedFoundationOptions.shouldCheck, true);
-assert.equal(
-    prerequisiteBlockedFoundationOptions.hasOnlyPrerequisiteBlockedOptions,
-    true,
-);
-const eligibleFoundationOptions = getFoundationCourseOptionStatus(
-    ['CS 33', 'CS 132'],
-    ['CS 132'],
-    ['CS 33', 'CS 132'],
-);
-assert.equal(eligibleFoundationOptions.shouldCheck, true);
-assert.equal(eligibleFoundationOptions.hasOnlyPrerequisiteBlockedOptions, false);
-const allRemainingFoundationCoursesEnlisted = getFoundationCourseOptionStatus(
-    ['CS 132'],
-    ['CS 132'],
-    [],
-);
-assert.equal(allRemainingFoundationCoursesEnlisted.shouldCheck, false);
-assert.equal(
-    allRemainingFoundationCoursesEnlisted.hasOnlyPrerequisiteBlockedOptions,
-    false,
-);
-assert.equal(getFoundationCourseOptionStatus([], [], []).shouldCheck, false);
-assert.ok(
-    source.includes(
-        '⚠️ 50% CS/Math rule unsatisfied! (check enlistments: few eligible courses)',
-    ),
-);
+assert.equal(isCsMathLoadRuleExempt(['CS 140']), true);
+assert.equal(isCsMathLoadRuleExempt(new Set(['CS150'])), true);
+assert.equal(isCsMathLoadRuleExempt(['CS 132', 'CS 180']), false);
+assert.equal(isCsMathLoadRuleExempt([]), false);
+assert.ok(source.includes('if (isCsMathLoadRuleExempt(eligibleCodesSet))'));
+assert.ok(!source.includes('few eligible courses'));
 assert.ok(source.includes("statusDiv.innerText = 'Checking VSO status...';"));
 assert.ok(
     source.indexOf('const listedAsVso = await vsoStatusReadyPromise;') <
