@@ -862,34 +862,29 @@
     }
 
     // Checks whether at least half of the current academic load consists of
-    // not-yet-passed foundation CS/Math courses. Math 20 remains visible as a
-    // four-unit course but contributes zero to academic-load accounting.
-    function getFoundationLoadRuleStatus(
-        totalLoadUnits,
-        enlistedCourses,
-        hasPassedCourse = () => false,
-    ) {
+    // currently enlisted CS or Math courses. The foundation-course list only
+    // controls whether this check still applies; it must not exclude advanced
+    // CS/Math courses from the numerator. Math 20 remains visible as a four-unit
+    // course but contributes zero to academic-load accounting.
+    function getCsMathLoadRuleStatus(totalLoadUnits, enlistedCourses) {
         const normalizedTotalUnits = Number(totalLoadUnits);
         const totalUnits =
             Number.isFinite(normalizedTotalUnits) && normalizedTotalUnits > 0
                 ? normalizedTotalUnits
                 : 0;
-        const foundationUnits = Array.from(
+        const csMathUnits = Array.from(
             getEnlistedCourseUnitsByCode(enlistedCourses),
         ).reduce(
             (sum, [normalizedCode, units]) =>
-                FOUNDATION_LOAD_COURSE_CODES.has(normalizedCode) &&
-                !hasPassedCourse(normalizedCode)
-                    ? sum + units
-                    : sum,
+                /^(?:CS|MATH)\d/.test(normalizedCode) ? sum + units : sum,
             0,
         );
 
         return {
             totalUnits,
-            foundationUnits,
-            ratio: totalUnits > 0 ? foundationUnits / totalUnits : 0,
-            satisfied: totalUnits <= 0 || foundationUnits >= totalUnits * 0.5,
+            csMathUnits,
+            ratio: totalUnits > 0 ? csMathUnits / totalUnits : 0,
+            satisfied: totalUnits <= 0 || csMathUnits >= totalUnits * 0.5,
         };
     }
 
@@ -1336,7 +1331,7 @@
             isZeroAcademicUnitCourse,
             getCourseUnitValues,
             getEnlistedCourseUnitsByCode,
-            getFoundationLoadRuleStatus,
+            getCsMathLoadRuleStatus,
             getFoundationCourseOptionStatus,
             getPassedAttemptLimit,
             hasReachedPassedAttemptLimit,
@@ -3786,12 +3781,11 @@
                 if (!foundationCourseOptionStatus.shouldCheck) {
                     foundationLoadStatusDiv.innerHTML = '';
                 } else {
-                    const foundationLoadStatus = getFoundationLoadRuleStatus(
+                    const csMathLoadStatus = getCsMathLoadRuleStatus(
                         totalUnits,
                         enlistedCourses,
-                        hasPassed,
                     );
-                    if (foundationLoadStatus.satisfied) {
+                    if (csMathLoadStatus.satisfied) {
                         foundationLoadStatusDiv.innerHTML = '';
                     } else if (
                         foundationCourseOptionStatus.hasOnlyPrerequisiteBlockedOptions
