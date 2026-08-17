@@ -443,6 +443,16 @@ assert.ok(
         source.lastIndexOf('initializeAdvisingAssistant();'),
 );
 assert.ok(source.includes('if (!isVsoStudent) {'));
+assert.ok(
+    source.includes(
+        'display: flex; align-items: flex-start; width: 100%;',
+    ),
+);
+assert.ok(
+    source.includes(
+        'data-availability-indicator style="flex: 0 0 16px; text-align: center; margin-left: 4px;"',
+    ),
+);
 
 assert.deepEqual(
     Array.from(
