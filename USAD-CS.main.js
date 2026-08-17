@@ -5060,8 +5060,8 @@
                         const availabilityIcon =
                             checked
                                 ? offered
-                                    ? ' <span aria-label="Offered in CRS" title="Offered in CRS">🟢</span>'
-                                    : ' <span aria-label="Not offered in CRS" title="Not offered in CRS">🔴</span>'
+                                    ? '<span data-availability-indicator style="flex: 0 0 16px; text-align: center; margin-left: 4px;" aria-label="Offered in CRS" title="Offered in CRS">🟢</span>'
+                                    : '<span data-availability-indicator style="flex: 0 0 16px; text-align: center; margin-left: 4px;" aria-label="Not offered in CRS" title="Not offered in CRS">🔴</span>'
                                 : '';
                         const safeCourse = escapeHTML(courseName);
                         const concurrentText =
@@ -5069,7 +5069,7 @@
                                 ? ` <span style="color: #856404; font-weight: normal; font-size: 11px;">(Take with: ${escapeHTML(item.concurrent.join(', '))})</span>`
                                 : '';
 
-                        html += `<li style="margin-bottom: 2px; font-size: 12px; color: ${color}; font-weight: normal;">${safeCourse}${availabilityIcon}${concurrentText}</li>`;
+                        html += `<li style="margin-bottom: 2px; font-size: 12px; color: ${color}; font-weight: normal;"><span style="display: flex; align-items: flex-start; width: 100%;"><span style="min-width: 0; flex: 1 1 auto;">${safeCourse}${concurrentText}</span>${availabilityIcon}</span></li>`;
                     });
 
                     html += '</ul></div>';
