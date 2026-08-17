@@ -29,7 +29,7 @@ const {
     isZeroAcademicUnitCourse,
     getCourseUnitValues,
     getEnlistedCourseUnitsByCode,
-    getFoundationLoadRuleStatus,
+    getCsMathLoadRuleStatus,
     getFoundationCourseOptionStatus,
     getPassedAttemptLimit,
     hasReachedPassedAttemptLimit,
@@ -312,7 +312,7 @@ assert.equal(enlistedMath20Candidate.units, 0);
 assert.equal(enlistedMath20Candidate.displayUnits, 4);
 assert.equal(enlistedMath20Candidate.category, 'Core Courses');
 
-const satisfiedFoundationLoad = getFoundationLoadRuleStatus(
+const satisfiedCsMathLoad = getCsMathLoadRuleStatus(
     18,
     [
         { normalizedCode: 'CS11', creditText: '4.0' },
@@ -320,10 +320,9 @@ const satisfiedFoundationLoad = getFoundationLoadRuleStatus(
         { normalizedCode: 'MATH21', creditText: '4.0' },
         { normalizedCode: 'KAS1', creditText: '3.0' },
     ],
-    () => false,
 );
-assert.equal(satisfiedFoundationLoad.foundationUnits, 12);
-assert.equal(satisfiedFoundationLoad.satisfied, true);
+assert.equal(satisfiedCsMathLoad.csMathUnits, 12);
+assert.equal(satisfiedCsMathLoad.satisfied, true);
 
 const zeroCreditIntegratedComponent = getCourseUnitValues(
     'CS 32',
@@ -332,17 +331,16 @@ const zeroCreditIntegratedComponent = getCourseUnitValues(
 );
 assert.equal(zeroCreditIntegratedComponent.units, 0);
 assert.equal(zeroCreditIntegratedComponent.displayUnits, 0);
-const integratedFoundationLoad = getFoundationLoadRuleStatus(
+const integratedCsMathLoad = getCsMathLoadRuleStatus(
     13,
     [
         { normalizedCode: 'CS32', creditText: '0.0' },
         { normalizedCode: 'CS32', creditText: '4.0' },
         { normalizedCode: 'ENG30', creditText: '3.0' },
     ],
-    () => false,
 );
-assert.equal(integratedFoundationLoad.foundationUnits, 4);
-assert.equal(integratedFoundationLoad.satisfied, false);
+assert.equal(integratedCsMathLoad.csMathUnits, 4);
+assert.equal(integratedCsMathLoad.satisfied, false);
 const nonzeroLectureLabUnits = getEnlistedCourseUnitsByCode([
     { normalizedCode: 'CS33', creditText: '3.0' },
     { normalizedCode: 'CS33', creditText: '1.0' },
@@ -369,7 +367,7 @@ assert.equal(nonzeroLectureLabUnits.get('CS140'), 4);
         `${label} lecture/lab components should be added`,
     );
 });
-const nonzeroIntegratedFoundationLoad = getFoundationLoadRuleStatus(
+const nonzeroIntegratedCsMathLoad = getCsMathLoadRuleStatus(
     15,
     [
         { normalizedCode: 'CS33', creditText: '3.0' },
@@ -377,24 +375,37 @@ const nonzeroIntegratedFoundationLoad = getFoundationLoadRuleStatus(
         { normalizedCode: 'CS132', creditText: '3.0' },
         { normalizedCode: 'KAS1', creditText: '3.0' },
     ],
-    () => false,
 );
-assert.equal(nonzeroIntegratedFoundationLoad.foundationUnits, 7);
-assert.equal(nonzeroIntegratedFoundationLoad.satisfied, false);
+assert.equal(nonzeroIntegratedCsMathLoad.csMathUnits, 7);
+assert.equal(nonzeroIntegratedCsMathLoad.satisfied, false);
 
-const advancedFoundationLoad = getFoundationLoadRuleStatus(
+const advancedCsMathLoad = getCsMathLoadRuleStatus(
     18,
     [
         { normalizedCode: 'CS132', creditText: '3.0' },
         { normalizedCode: 'CS133', creditText: '3.0' },
         { normalizedCode: 'CS136', creditText: '3.0' },
     ],
-    () => false,
 );
-assert.equal(advancedFoundationLoad.foundationUnits, 9);
-assert.equal(advancedFoundationLoad.satisfied, true);
+assert.equal(advancedCsMathLoad.csMathUnits, 9);
+assert.equal(advancedCsMathLoad.satisfied, true);
 
-const unsatisfiedFoundationLoad = getFoundationLoadRuleStatus(
+const attachedStudentCsMathLoad = getCsMathLoadRuleStatus(20, [
+    { normalizedCode: 'CS173', creditText: '3.0' },
+    { normalizedCode: 'CS191', creditText: '3.0' },
+    { normalizedCode: 'CS165', creditText: '0.0' },
+    { normalizedCode: 'CS165', creditText: '4.0' },
+    { normalizedCode: 'CS150', creditText: '0.0' },
+    { normalizedCode: 'CS150', creditText: '3.0' },
+    { normalizedCode: 'CS140', creditText: '0.0' },
+    { normalizedCode: 'CS140', creditText: '4.0' },
+    { normalizedCode: 'CS138', creditText: '3.0' },
+]);
+assert.equal(attachedStudentCsMathLoad.csMathUnits, 20);
+assert.equal(attachedStudentCsMathLoad.ratio, 1);
+assert.equal(attachedStudentCsMathLoad.satisfied, true);
+
+const unsatisfiedCsMathLoad = getCsMathLoadRuleStatus(
     18,
     [
         { normalizedCode: 'CS11', creditText: '4.0' },
@@ -402,11 +413,10 @@ const unsatisfiedFoundationLoad = getFoundationLoadRuleStatus(
         { normalizedCode: 'MATH21', creditText: '4.0' },
         { normalizedCode: 'KAS1', creditText: '3.0' },
     ],
-    (courseCode) => courseCode === 'MATH21',
 );
-assert.equal(unsatisfiedFoundationLoad.foundationUnits, 4);
-assert.equal(unsatisfiedFoundationLoad.satisfied, false);
-assert.equal(getFoundationLoadRuleStatus(0, [], () => false).satisfied, true);
+assert.equal(unsatisfiedCsMathLoad.csMathUnits, 8);
+assert.equal(unsatisfiedCsMathLoad.satisfied, false);
+assert.equal(getCsMathLoadRuleStatus(0, []).satisfied, true);
 assert.ok(source.includes('🚫 50% CS/Math rule unsatisfied!'));
 const prerequisiteBlockedFoundationOptions = getFoundationCourseOptionStatus(
     ['CS 132', 'CS 133'],
