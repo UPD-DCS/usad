@@ -111,7 +111,19 @@
         'CS175',
         'CS176',
     ]);
-    const CS_MATH_LOAD_RULE_EXEMPTION_CODES = new Set(['CS140', 'CS150']);
+    const CS_MATH_LOAD_RULE_ENROLLABLE_CODES = new Set([
+        'CS10',
+        'CS11',
+        'CS20',
+        'CS21',
+        'CS30',
+        'CS31',
+        'CS32',
+        'CS33',
+        'MATH21',
+        'MATH22',
+        'MATH23',
+    ]);
     const ACRONYM_SUBJECTS = new Set([
         'BIO',
         'CS',
@@ -867,13 +879,22 @@
         };
     }
 
-    // Students currently eligible to take CS 140 or CS 150 are exempt from
-    // the 50% CS/Math load check. Eligibility is supplied by the same complete
-    // prerequisite/corequisite evaluation used for course recommendations.
-    function isCsMathLoadRuleExempt(eligibleCourseCodes) {
-        return Array.from(eligibleCourseCodes || []).some((courseCode) =>
-            CS_MATH_LOAD_RULE_EXEMPTION_CODES.has(normalizeCode(courseCode)),
+    // Show the 50% warning only while at least one specified foundational
+    // course is prerequisite/corequisite-eligible and not already enlisted.
+    function canStillEnrollInCsMathLoadRuleCourse(
+        eligibleCourseCodes,
+        enlistedCourseCodes,
+    ) {
+        const enlistedCodes = new Set(
+            Array.from(enlistedCourseCodes || []).map(normalizeCode),
         );
+        return Array.from(eligibleCourseCodes || []).some((courseCode) => {
+            const normalizedCode = normalizeCode(courseCode);
+            return (
+                CS_MATH_LOAD_RULE_ENROLLABLE_CODES.has(normalizedCode) &&
+                !enlistedCodes.has(normalizedCode)
+            );
+        });
     }
 
     // Returns null when the requirement is not a standing rule; otherwise,
@@ -1289,7 +1310,7 @@
             getCourseUnitValues,
             getEnlistedCourseUnitsByCode,
             getCsMathLoadRuleStatus,
-            isCsMathLoadRuleExempt,
+            canStillEnrollInCsMathLoadRuleCourse,
             getPassedAttemptLimit,
             hasReachedPassedAttemptLimit,
             getStandingRequirementStatus,
@@ -3723,7 +3744,12 @@
                 'foundation-load-rule-status',
             );
             if (foundationLoadStatusDiv) {
-                if (isCsMathLoadRuleExempt(eligibleCodesSet)) {
+                if (
+                    !canStillEnrollInCsMathLoadRuleCourse(
+                        eligibleCodesSet,
+                        enlistedBaseCodes,
+                    )
+                ) {
                     foundationLoadStatusDiv.innerHTML = '';
                 } else {
                     const csMathLoadStatus = getCsMathLoadRuleStatus(

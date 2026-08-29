@@ -30,7 +30,7 @@ const {
     getCourseUnitValues,
     getEnlistedCourseUnitsByCode,
     getCsMathLoadRuleStatus,
-    isCsMathLoadRuleExempt,
+    canStillEnrollInCsMathLoadRuleCourse,
     getPassedAttemptLimit,
     hasReachedPassedAttemptLimit,
     getStandingRequirementStatus,
@@ -418,11 +418,35 @@ assert.equal(unsatisfiedCsMathLoad.csMathUnits, 8);
 assert.equal(unsatisfiedCsMathLoad.satisfied, false);
 assert.equal(getCsMathLoadRuleStatus(0, []).satisfied, true);
 assert.ok(source.includes('🚫 50% CS/Math rule unsatisfied!'));
-assert.equal(isCsMathLoadRuleExempt(['CS 140']), true);
-assert.equal(isCsMathLoadRuleExempt(new Set(['CS150'])), true);
-assert.equal(isCsMathLoadRuleExempt(['CS 132', 'CS 180']), false);
-assert.equal(isCsMathLoadRuleExempt([]), false);
-assert.ok(source.includes('if (isCsMathLoadRuleExempt(eligibleCodesSet))'));
+[
+    'CS 10',
+    'CS 11',
+    'CS 20',
+    'CS 21',
+    'CS 30',
+    'CS 31',
+    'CS 32',
+    'CS 33',
+    'Math 21',
+    'Math 22',
+    'Math 23',
+].forEach((courseCode) => {
+    assert.equal(
+        canStillEnrollInCsMathLoadRuleCourse([courseCode], []),
+        true,
+        `${courseCode} should activate the 50% CS/Math flag check`,
+    );
+});
+['CS 12', 'CS 140', 'CS 150', 'Math 40'].forEach((courseCode) => {
+    assert.equal(
+        canStillEnrollInCsMathLoadRuleCourse([courseCode], []),
+        false,
+        `${courseCode} should not activate the 50% CS/Math flag check`,
+    );
+});
+assert.equal(canStillEnrollInCsMathLoadRuleCourse(['CS 21'], ['CS21']), false);
+assert.equal(canStillEnrollInCsMathLoadRuleCourse([], []), false);
+assert.ok(source.includes('canStillEnrollInCsMathLoadRuleCourse('));
 assert.ok(!source.includes('few eligible courses'));
 assert.ok(source.includes("statusDiv.innerText = 'Checking VSO status...';"));
 assert.ok(
