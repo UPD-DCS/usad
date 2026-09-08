@@ -42,6 +42,7 @@ const {
     getPairedGeOption,
     getPairedGeFamily,
     getNstpLevel,
+    getCombinedNstpCourseNames,
     getProgressionMaximumUnits,
     getProgressionLoadSummary,
     buildEnlistedProgressionCandidate,
@@ -234,6 +235,11 @@ assert.equal(getPairedGeFamily('STS 1', 'DRMAPS'), 'STSDRMAPS');
 assert.equal(getNstpLevel('CWTS 2'), 2);
 assert.equal(getNstpLevel('ROTC Mil Sci 1'), 1);
 assert.equal(getNstpLevel('MS 1'), null);
+assert.deepEqual(
+    Array.from(getCombinedNstpCourseNames('CWTS 1 and 2 CSWCD NSTP1-2')),
+    ['CWTS 1', 'CWTS 2'],
+);
+assert.deepEqual(Array.from(getCombinedNstpCourseNames('CWTS 1 THR')), []);
 
 assert.equal(getProgressionMaximumUnits('1', [{ hasLab: false }]), 18);
 assert.equal(getProgressionMaximumUnits('2', [{ hasLab: true }]), 21);
