@@ -1024,6 +1024,33 @@
         return null;
     }
 
+    // CRS may record CWTS/LTS/ROTC 1 and 2 as one combined class. Return the
+    // two logical NSTP labels so checklist rows can be assigned one level each.
+    function getCombinedNstpCourseNames(...courseLabels) {
+        const combinedText = courseLabels
+            .filter(Boolean)
+            .join(' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+        const match = combinedText.match(
+            /\b(CWTS|LTS|ROTC\s*Mil\s*Sci|ROTC|Mil\s*Sci|NSTP)\s*1\s*(?:and|&|\/|[-–])\s*2\b/i,
+        );
+        if (!match) return [];
+
+        let track = match[1].replace(/\s+/g, ' ').toUpperCase();
+        if (track.includes('ROTC') || track.includes('MIL')) {
+            track = 'ROTC Mil Sci';
+        } else if (track.includes('CWTS')) {
+            track = 'CWTS';
+        } else if (track.includes('LTS')) {
+            track = 'LTS';
+        } else {
+            track = 'NSTP';
+        }
+
+        return [1, 2].map((level) => `${track} ${level}`);
+    }
+
     function getProgressionMaximumUnits(termCode, courses) {
         if (termCode === TERM_CODES.MIDYEAR) return 6;
         return courses.some((course) => course.hasLab) ? 21 : 18;
@@ -1322,6 +1349,7 @@
             getPairedGeOption,
             getPairedGeFamily,
             getNstpLevel,
+            getCombinedNstpCourseNames,
             getProgressionMaximumUnits,
             getProgressionLoadSummary,
             buildEnlistedProgressionCandidate,
@@ -1879,6 +1907,7 @@
                         let nstpMatch = textToSearch.match(
                             /\b(CWTS|LTS|ROTC\s*Mil\s*Sci|ROTC|Mil\s*Sci)\s*([12])\b/i,
                         );
+                        let combinedNstpCourseNames = getCombinedNstpCourseNames(textToSearch);
 
                         if (!nstpMatch) {
                             let fullRowText = row.innerText;
@@ -1890,12 +1919,24 @@
                             ) {
                                 fullRowText += ' ' + row.nextElementSibling.innerText;
                             }
+                            combinedNstpCourseNames = getCombinedNstpCourseNames(fullRowText);
                             nstpMatch = fullRowText.match(
                                 /\b(CWTS|LTS|ROTC\s*Mil\s*Sci|ROTC|Mil\s*Sci)\s*([12])\b/i,
                             );
                         }
 
-                        if (nstpMatch) {
+                        const combinedNstpCourseName =
+                            combinedNstpCourseNames[nstpOccurrence - 1];
+                        if (combinedNstpCourseName) {
+                            courseName = combinedNstpCourseName;
+
+                            if (
+                                isPassingGrade(latestGrade) &&
+                                getNstpLevel(courseName) === 1
+                            ) {
+                                firstNstpPassedTrack = courseName.replace(/\s+1$/, '');
+                            }
+                        } else if (nstpMatch) {
                             let track = nstpMatch[1].replace(/\s+/g, ' ').toUpperCase();
                             if (track.includes('ROTC') || track.includes('MIL')) {
                                 track = 'ROTC Mil Sci';
@@ -2377,7 +2418,17 @@
                     let displayLabel = item.curriculumSlot;
 
                     if (['CS Electives', 'Free Electives', 'PE', 'NSTP'].includes(catName)) {
-                        if (item.completedCourse && effectiveGrade !== 'null') {
+                        if (
+                            item.completedCourse &&
+                            getCombinedNstpCourseNames(item.completedCourse).length > 0 &&
+                            item.rawName
+                        ) {
+                            // A combined CRS class is represented by two NSTP
+                            // curriculum rows. The parser assigns each row its
+                            // logical level, which must take precedence over
+                            // the raw class label's first matching number.
+                            displayLabel = item.rawName;
+                        } else if (item.completedCourse && effectiveGrade !== 'null') {
                             displayLabel = cleanExtractedCourseTitle(item.completedCourse);
                         } else if (item.rawName) {
                             displayLabel = cleanExtractedCourseTitle(item.rawName);
