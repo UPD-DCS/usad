@@ -45,6 +45,7 @@ const {
     getCombinedNstpCourseNames,
     getProgressionMaximumUnits,
     getProgressionLoadSummary,
+    getUnplannedDependencyScores,
     buildEnlistedProgressionCandidate,
     sortProgressionCourses,
     isValidProgressionCourseSet,
@@ -274,6 +275,31 @@ const fullLoadSummary = getProgressionLoadSummary(
 assert.equal(fullLoadSummary.additionalUnits, 0);
 assert.equal(fullLoadSummary.totalUnits, 21);
 assert.equal(fullLoadSummary.maximumUnits, 21);
+
+const dependencyCandidates = [
+    {
+        id: 'cs12',
+        prerequisites: ['CS 11 or Math 21'],
+        corequisites: ['CS 11'],
+    },
+    {
+        id: 'cs13',
+        prerequisites: ['CS 11'],
+        corequisites: [],
+    },
+];
+const initialDependencyScores = getUnplannedDependencyScores(
+    dependencyCandidates,
+    new Set(),
+);
+assert.equal(initialDependencyScores.get('CS11'), 2);
+assert.equal(initialDependencyScores.get('MATH21'), 1);
+const laterDependencyScores = getUnplannedDependencyScores(
+    dependencyCandidates,
+    new Set(['cs13']),
+);
+assert.equal(laterDependencyScores.get('CS11'), 1);
+assert.equal(laterDependencyScores.get('MATH21'), 1);
 
 const enlistedLabCandidate = buildEnlistedProgressionCandidate(
     {

@@ -1088,6 +1088,30 @@
         };
     }
 
+    // Count each unplanned course once for every course code that can unlock it.
+    // A requirement may mention the same code in multiple alternatives or cells.
+    function getUnplannedDependencyScores(candidates, plannedIds) {
+        const scores = new Map();
+        for (const candidate of candidates) {
+            if (plannedIds.has(candidate.id)) continue;
+
+            const dependencyCodes = new Set();
+            for (const requirement of [
+                ...candidate.prerequisites,
+                ...candidate.corequisites,
+            ]) {
+                for (const option of requirement.split(/\s+or\s+/i)) {
+                    dependencyCodes.add(normalizeCode(option.trim()));
+                }
+            }
+
+            for (const code of dependencyCodes) {
+                scores.set(code, (scores.get(code) || 0) + 1);
+            }
+        }
+        return scores;
+    }
+
     // Converts a prerequisite-valid CRS enlistment into the same shape used
     // by the prescribed progression. This allows valid current courses to be
     // fixed into the first term even when they do not match an unfinished
@@ -1352,6 +1376,7 @@
             getCombinedNstpCourseNames,
             getProgressionMaximumUnits,
             getProgressionLoadSummary,
+            getUnplannedDependencyScores,
             buildEnlistedProgressionCandidate,
             sortProgressionCourses,
             isValidProgressionCourseSet,
@@ -4629,25 +4654,6 @@
                         .split(/\s+or\s+/i)
                         .some((option) => projectedHasPassed(option.trim()));
 
-                const dependencyScore = (candidate) =>
-                    remainingCandidates.reduce((score, other) => {
-                        if (plannedIds.has(other.id)) return score;
-                        const requirements = [
-                            ...other.prerequisites,
-                            ...other.corequisites,
-                        ];
-                        const unlocks = requirements.some((requirement) =>
-                            requirement
-                                .split(/\s+or\s+/i)
-                                .some(
-                                    (option) =>
-                                        normalizeCode(option.trim()) ===
-                                        candidate.normCode,
-                                ),
-                        );
-                        return score + (unlocks ? 1 : 0);
-                    }, 0);
-
                 let termCode =
                     activeAcademicTermCode &&
                     ['1', '2', 'M'].includes(activeAcademicTermCode)
@@ -4799,6 +4805,10 @@
                             isAllowedThisTerm(candidate) &&
                             prerequisitesMet(candidate),
                     );
+                    const dependencyScores = getUnplannedDependencyScores(
+                        remainingCandidates,
+                        plannedIds,
+                    );
                     const coreCourses = eligible
                         .filter(
                             (candidate) =>
@@ -4806,7 +4816,8 @@
                         )
                         .sort(
                             (a, b) =>
-                                dependencyScore(b) - dependencyScore(a) ||
+                                (dependencyScores.get(b.normCode) || 0) -
+                                    (dependencyScores.get(a.normCode) || 0) ||
                                 naturalCourseSort(a.course, b.course),
                         );
                     const geAndElectiveCourses = eligible
@@ -5182,10 +5193,14 @@
             }
             schedulePrescribedProgression();
 
-            const allRecommendedItems = Object.values(categories).flat().filter(
-                (item, index, items) =>
-                    items.findIndex((other) => other.course === item.course) === index,
-            );
+            const seenRecommendedCourses = new Set();
+            const allRecommendedItems = Object.values(categories)
+                .flat()
+                .filter((item) => {
+                    if (seenRecommendedCourses.has(item.course)) return false;
+                    seenRecommendedCourses.add(item.course);
+                    return true;
+                });
             Promise.all(
                 allRecommendedItems.map(async (item) => {
                     try {
